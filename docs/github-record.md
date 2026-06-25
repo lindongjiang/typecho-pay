@@ -2,6 +2,38 @@
 
 Date: 2026-06-25
 
+## 2026-06-25 Configuration Compliance Follow-Up
+
+### Change
+
+Aligned payment setup documentation with the current gateway implementation and added minimal GitHub Actions CI.
+
+### Scope
+
+- Replaced the incorrect PayPay onboarding link with PayPay OPA / Dynamic QR documentation guidance.
+- Clarified that Alipay currently supports ordinary public-key mode only, not public-key certificate mode.
+- Clarified CNY shortcode amounts are written in cents and converted to yuan before calling Alipay.
+- Updated plugin metadata version to `0.2.0`.
+- Split the duplicated `0.1.0` changelog section into `0.1.1` and `0.1.0`.
+- Removed config-page pseudo section fields so plugin settings do not persist meaningless section-marker values.
+- Added `.github/workflows/ci.yml` to install dependencies, lint PHP files, and run `tests/SignerTest.php`.
+
+### Verification
+
+Local static checks:
+
+- `git diff --check`
+- Confirmed no incorrect PayPay onboarding links or pseudo section settings remain in `Plugin.php`.
+
+Server-side checks should be run after pulling the pushed commit:
+
+```sh
+composer validate --no-check-lock --strict
+composer install --no-dev --prefer-dist --no-interaction --no-progress
+find . -name '*.php' -print0 | xargs -0 -n1 php -l
+php tests/SignerTest.php
+```
+
 ## Change
 
 Initialized `TypechoPay` as a Typecho payment plugin under `usr/plugins/TypechoPay`.

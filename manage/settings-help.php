@@ -1,7 +1,5 @@
 <?php
 
-use Typecho\Db;
-
 if (!defined('__TYPECHO_ADMIN__')) {
     exit;
 }
@@ -10,7 +8,6 @@ include 'header.php';
 include 'menu.php';
 
 $siteUrl = rtrim($options->index, '/');
-$pluginConfigUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fsettings-help.php';
 ?>
 
 <div class="main">
@@ -107,9 +104,10 @@ $pluginConfigUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage
         <!-- 配置指南 -->
         <div class="table-description" style="margin-top:30px;">
             <h3>🇯🇵 PayPay 配置指南</h3>
+            <p>PayPay 是日本主流移动支付，当前插件使用 PayPay Open Payment API 的 Dynamic QR。</p>
             <ol>
-                <li>访问 <a href="https://pay.ne.jp/" target="_blank">PayPay 商户平台</a> 注册商户账号</li>
-                <li>在商户后台获取 <strong>API Key</strong>、<strong>API Secret</strong> 和 <strong>Merchant ID</strong></li>
+                <li>请通过 PayPay 官方加盟店/开发者流程申请 OPA 权限，并获取 <strong>API Key</strong>、<strong>API Secret</strong> 和 <strong>Merchant ID</strong></li>
+                <li>参考 <a href="https://www.paypay.ne.jp/opa/doc/jp/v1.0/dynamicqrcode" target="_blank">PayPay Dynamic QR 文档</a> 配置 Dynamic QR 支付</li>
                 <li>设置 Webhook URL 为上方的 PayPay 回调地址</li>
                 <li>在插件设置中填写以上信息，环境选择 <strong>Sandbox</strong> 进行测试</li>
                 <li>测试完成后切换到 <strong>Production</strong> 环境</li>
@@ -151,7 +149,7 @@ $pluginConfigUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage
                 <li>在应用详情中开通 <strong>电脑网站支付</strong> 或 <strong>当面付</strong> 能力</li>
                 <li>在 <strong>开发设置 → 接口加签方式</strong> 中：
                     <ul>
-                        <li>选择 <strong>公钥证书</strong> 或 <strong>公钥</strong> 模式</li>
+                        <li>选择 <strong>普通公钥模式</strong></li>
                         <li>使用支付宝密钥生成工具生成 <strong>RSA2 密钥对</strong></li>
                         <li>上传应用公钥，获取 <strong>支付宝公钥</strong></li>
                     </ul>
@@ -159,12 +157,13 @@ $pluginConfigUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage
                 <li>在插件设置中填写 AppID、应用私钥、支付宝公钥</li>
                 <li>在支付宝开放平台 → 应用配置 → 开发设置 中填写上方的异步通知地址</li>
             </ol>
+            <p><strong>证书模式：</strong>当前插件暂不支持支付宝公钥证书模式。如果你的应用已经使用公钥证书模式，请先改用普通公钥模式，或后续扩展证书字段。</p>
             <p><strong>注意事项：</strong></p>
             <ul>
                 <li><strong>应用私钥</strong>是敏感信息，请勿截图外泄或提交到代码仓库</li>
                 <li><strong>支付宝公钥</strong>不是应用公钥，注意区分</li>
                 <li>Page Pay 模式会跳转支付宝收银台，Precreate 模式生成二维码</li>
-                <li>支付宝只支持 CNY（人民币），金额单位为元</li>
+                <li>支付宝只支持 CNY（人民币）。插件短代码中的 CNY 金额单位为“分”，插件内部会在调用支付宝接口时转换为“元”。</li>
             </ul>
         </div>
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed PayPay setup links to point to PayPay OPA/Dynamic QR documentation.
+- Clarified that Alipay currently supports ordinary public-key mode only.
+- Clarified CNY shortcode amounts are written in cents and converted to yuan for Alipay.
+- Added minimal GitHub Actions CI for dependency install, PHP lint, and signer tests.
+
 ## 0.2.0 - 2026-06-25
 
 - Enhanced plugin config UI with grouped sections: Basic, PayPay, WeChat Pay, Alipay
@@ -12,7 +17,7 @@
 - Added shortcode usage documentation and FAQ section
 - Updated README with new admin menu structure and setup instructions
 
-## 0.1.0 - 2026-06-25
+## 0.1.1 - 2026-06-25
 
 - Fixed PayPay Dynamic QR active query path to `/v2/codes/payments/{merchantPaymentId}`.
 - Added active order query for PayPay, WeChat Pay, and Alipay.

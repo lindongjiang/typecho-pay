@@ -49,7 +49,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.1.0
+ * @version 0.2.0
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -135,8 +135,6 @@ class Plugin implements PluginInterface
         // PayPay 配置
         // ============================================================
 
-        $form->addInput(new Text('_section_paypay', null, '', _t(''), _t('<hr><h3 style="margin:20px 0 10px;">🇯🇵 PayPay 配置</h3><p>PayPay 是日本主流的移动支付，支持 Dynamic QR 扫码支付。</p><p><strong>适用场景：</strong>面向日本用户的商品或服务销售。</p><p><strong>币种限制：</strong>仅支持 JPY（日元）。</p><p><strong>申请地址：</strong><a href="https://pay.ne.jp/" target="_blank">https://pay.ne.jp/</a></p>')));
-
         $paypayEnvironment = new Select(
             'paypayEnvironment',
             [
@@ -146,21 +144,19 @@ class Plugin implements PluginInterface
             ],
             'sandbox',
             _t('PayPay 环境'),
-            _t('开发时请使用 Sandbox 环境，生产环境切换到 Production。')
+            _t('当前使用 PayPay Open Payment API 的 Dynamic QR。开发时请使用 Sandbox 环境，生产环境切换到 Production。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')
         );
         $form->addInput($paypayEnvironment);
 
-        $form->addInput(new Text('paypayApiKey', null, '', _t('PayPay API Key'), _t('在 PayPay 商户后台获取。格式类似：<code>xxxxxxxxxxxx</code>')));
-        $form->addInput(new Password('paypayApiSecret', null, '', _t('PayPay API Secret'), _t('在 PayPay 商户后台获取，用于请求签名。<strong>请妥善保管，不要泄露。</strong>')));
-        $form->addInput(new Text('paypayMerchantId', null, '', _t('PayPay Merchant ID'), _t('PayPay 商户 ID，格式类似：<code>70xxxx</code>')));
+        $form->addInput(new Text('paypayApiKey', null, '', _t('PayPay API Key'), _t('通过 PayPay 官方加盟店/开发者流程开通 OPA 权限后获取。格式类似：<code>xxxxxxxxxxxx</code>')));
+        $form->addInput(new Password('paypayApiSecret', null, '', _t('PayPay API Secret'), _t('通过 PayPay 官方加盟店/开发者流程获取，用于请求签名。<strong>请妥善保管，不要泄露。</strong>')));
+        $form->addInput(new Text('paypayMerchantId', null, '', _t('PayPay Merchant ID'), _t('PayPay 商户 ID，格式类似：<code>70xxxx</code>。PayPay 仅支持 JPY（日元）。')));
 
         // ============================================================
         // 微信支付配置
         // ============================================================
 
-        $form->addInput(new Text('_section_wechat', null, '', _t(''), _t('<hr><h3 style="margin:20px 0 10px;">💚 微信支付配置</h3><p>当前支持 <strong>Native 扫码支付</strong>（PC 端生成二维码，用户微信扫码付款）。</p><p><strong>适用场景：</strong>电脑端网站收款，用户使用微信扫描二维码完成支付。</p><p><strong>币种限制：</strong>仅支持 CNY（人民币）。</p><p><strong>前提条件：</strong>需要在 <a href="https://pay.weixin.qq.com/" target="_blank">微信支付商户平台</a> 开通 Native 支付，并下载 APIv3 证书。</p>')));
-
-        $form->addInput(new Text('wechatAppId', null, '', _t('微信支付 AppID'), _t('公众号、小程序或网站应用绑定的 AppID。<br>在 <a href="https://mp.weixin.qq.com/" target="_blank">微信公众平台</a> 或 <a href="https://open.weixin.qq.com/" target="_blank">微信开放平台</a> 获取。')));
+        $form->addInput(new Text('wechatAppId', null, '', _t('微信支付 AppID'), _t('当前支持 Native 扫码支付，仅支持 CNY（人民币）。公众号、小程序或网站应用绑定的 AppID。<br>在 <a href="https://mp.weixin.qq.com/" target="_blank">微信公众平台</a> 或 <a href="https://open.weixin.qq.com/" target="_blank">微信开放平台</a> 获取。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
         $form->addInput(new Text('wechatMchId', null, '', _t('微信支付商户号（MchID）'), _t('在 <a href="https://pay.weixin.qq.com/" target="_blank">微信支付商户平台</a> → 账户中心 → 商户信息 中查看。')));
         $form->addInput(new Text('wechatMerchantSerial', null, '', _t('商户 API 证书序列号'), _t('在微信支付商户平台 → API 安全 → 证书序列号 中查看。<br>格式类似：<code>7D578B5A...</code>')));
         $form->addInput(new Text('wechatPrivateKeyPath', null, '', _t('商户 API 私钥文件路径'), _t('下载证书时获得的 <code>apiclient_key.pem</code> 文件的<strong>绝对路径</strong>。<br>建议放在网站根目录外，例如：<code>/www/secure/apiclient_key.pem</code><br>确保 PHP 有读取权限。')));
@@ -172,8 +168,6 @@ class Plugin implements PluginInterface
         // 支付宝配置
         // ============================================================
 
-        $form->addInput(new Text('_section_alipay', null, '', _t(''), _t('<hr><h3 style="margin:20px 0 10px;">🔵 支付宝配置</h3><p>支持两种支付模式：</p><ul><li><strong>电脑网站支付（Page Pay）：</strong>用户跳转到支付宝页面完成支付，适合 PC 端。</li><li><strong>当面付（Precreate）：</strong>生成二维码，用户支付宝扫码付款，适合线下或 PC 端。</li></ul><p><strong>币种限制：</strong>仅支持 CNY（人民币）。</p><p><strong>前提条件：</strong>需要在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> 创建应用并开通支付能力。</p>')));
-
         $alipayMode = new Select(
             'alipayMode',
             [
@@ -182,13 +176,13 @@ class Plugin implements PluginInterface
             ],
             'page',
             _t('支付宝支付模式'),
-            _t('Page Pay 适合电脑端，会跳转到支付宝收银台；Precreate 适合生成二维码让用户扫码支付。')
+            _t('Page Pay 适合电脑端，会跳转到支付宝收银台；Precreate 适合生成二维码让用户扫码支付。当前仅支持支付宝普通公钥模式，暂不支持公钥证书模式。')
         );
         $form->addInput($alipayMode);
 
-        $form->addInput(new Text('alipayAppId', null, '', _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。')));
-        $form->addInput(new Textarea('alipayPrivateKey', null, '', _t('支付宝应用私钥'), _t('在支付宝开放平台生成的应用私钥（RSA2），以 <code>-----BEGIN RSA PRIVATE KEY-----</code> 开头。<br><strong>⚠️ 这是敏感信息，请勿截图外泄！</strong>')));
-        $form->addInput(new Textarea('alipayPublicKey', null, '', _t('支付宝公钥'), _t('支付宝开放平台生成的支付宝公钥（用于验签），以 <code>-----BEGIN PUBLIC KEY-----</code> 开头。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥。')));
+        $form->addInput(new Text('alipayAppId', null, '', _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
+        $form->addInput(new Textarea('alipayPrivateKey', null, '', _t('支付宝应用私钥'), _t('在支付宝开放平台普通公钥模式下生成的应用私钥（RSA2），以 <code>-----BEGIN RSA PRIVATE KEY-----</code> 开头。<br><strong>这是敏感信息，请勿截图外泄！</strong>')));
+        $form->addInput(new Textarea('alipayPublicKey', null, '', _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签），以 <code>-----BEGIN PUBLIC KEY-----</code> 开头。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。')));
         $form->addInput(new Text('alipaySellerId', null, '', _t('支付宝 Seller ID（可选）'), _t('填写后会校验收款账号，提高安全性。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
     }
 

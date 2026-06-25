@@ -84,6 +84,7 @@ PayPay：
 支付宝：
 
 - 创建 Page Pay / Precreate 订单依赖官方 `alipaysdk/openapi` 包内的 v2 AOP 类。
+- 当前只支持支付宝普通公钥模式，暂不支持公钥证书模式。
 - 异步通知使用 SDK `rsaCheckV1` 验签，并校验 `app_id`、可选 `seller_id`、订单金额和状态。
 - 主动查单使用 `AlipayTradeQueryRequest`。
 - 只有 `TRADE_SUCCESS` / `TRADE_FINISHED` 会标记已支付。
@@ -123,9 +124,10 @@ PayPay：
 
 ## 验证
 
-本仓库当前 Typecho 根目录没有 `config.inc.php`，本机也没有可用 `php` 命令。可在有 PHP 的环境中运行：
+GitHub Actions 会执行最小 CI：安装生产依赖、PHP 语法检查和签名测试。也可在有 PHP 的环境中手动运行：
 
 ```sh
-php usr/plugins/TypechoPay/tests/SignerTest.php
-find usr/plugins/TypechoPay -name '*.php' -print0 | xargs -0 -n1 php -l
+composer install --no-dev --prefer-dist
+find . -name '*.php' -print0 | xargs -0 -n1 php -l
+php tests/SignerTest.php
 ```
