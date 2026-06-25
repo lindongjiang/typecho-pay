@@ -14,6 +14,7 @@
 - Added server-side throttling for active gateway queries.
 - Hardened paid state transitions so orders enter `paid` only after entitlement grant succeeds.
 - Added provider event metadata fields for payment event auditing.
+- Fixed attributed `[typechopay_content ...]` parsing, Composer SDK autoloading, and currency-incompatible gateway buttons.
 
 ## 0.1.0 - 2026-06-25
 

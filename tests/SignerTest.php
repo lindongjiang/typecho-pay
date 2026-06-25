@@ -42,4 +42,12 @@ if (Signer::verify($tamperedGateway, $secret, $signature) !== false) {
     exit(1);
 }
 
+$tamperedReturnTo = $payload;
+$tamperedReturnTo['return_to'] = 'https://evil.example/post/100.html';
+
+if (Signer::verify($tamperedReturnTo, $secret, $signature) !== false) {
+    fwrite(STDERR, "Expected tampered return_to to fail\n");
+    exit(1);
+}
+
 echo "SignerTest passed\n";

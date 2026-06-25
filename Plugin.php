@@ -21,6 +21,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
 }
 
+$vendorAutoload = __DIR__ . '/vendor/autoload.php';
+if (is_file($vendorAutoload)) {
+    require_once $vendorAutoload;
+}
+
 spl_autoload_register(function ($class) {
     $prefix = __NAMESPACE__ . '\\';
     if (strpos($class, $prefix) !== 0) {
@@ -192,6 +197,12 @@ class Plugin implements PluginInterface
             if (!$gateways) {
                 return '<p class="typechopay-error">' . htmlspecialchars(_t('没有可用支付方式')) . '</p>';
             }
+            $gateways = array_values(array_filter($gateways, function ($gateway) use ($currency) {
+                return self::gatewaySupportsCurrency($gateway, $currency);
+            }));
+            if (!$gateways) {
+                return '<p class="typechopay-error">' . htmlspecialchars(_t('当前币种没有可用支付方式')) . '</p>';
+            }
 
             [$bizType, $bizId] = self::resolveAccessTarget($attrs, $archive);
             if (self::currentVisitorCanAccess($bizType, $bizId)) {
@@ -289,7 +300,7 @@ class Plugin implements PluginInterface
 
     private static function renderProtectedContent(string $content, $archive): string
     {
-        if (strpos($content, '[typechopay_content]') === false) {
+        if (strpos($content, '[typechopay_content') === false) {
             return $content;
         }
 
@@ -355,6 +366,19 @@ class Plugin implements PluginInterface
         }
 
         return array_values(array_unique($normalized));
+    }
+
+    private static function gatewaySupportsCurrency(string $gateway, string $currency): bool
+    {
+        if ($gateway === 'paypay') {
+            return $currency === 'JPY';
+        }
+
+        if (in_array($gateway, ['wechat', 'alipay'], true)) {
+            return $currency === 'CNY';
+        }
+
+        return false;
     }
 
     private static function installTables()

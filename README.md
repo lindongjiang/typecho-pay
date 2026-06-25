@@ -15,7 +15,7 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 ## 安装
 
 1. 将目录放到 `usr/plugins/TypechoPay`。
-2. 在插件目录执行 `composer install --no-dev`，或发布时一并打包 `vendor/`。
+2. 在插件目录执行 `composer install --no-dev`，或发布时一并打包 `vendor/`；插件会自动加载 `vendor/autoload.php`。
 3. 在 Typecho 后台启用 `TypechoPay`。
 4. 在插件设置里启用支付网关并填写商户参数。
 5. 生产环境设置独立的“入口签名密钥”。
@@ -30,7 +30,7 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 [typechopay amount="500" currency="JPY" subject="AppFlex 30日权限" gateways="paypay"]
 ```
 
-`amount` 使用最小货币单位：JPY 为日元整数，CNY 为分。短代码渲染时会为每个支付按钮生成包含 `gateway`、`return_to`、`ts`、`nonce` 的 HMAC 签名，创建订单时服务端会重新验签、要求 10 分钟内有效，并一次性消费 nonce，防止用户修改隐藏字段篡改金额或重复提交同一入口。已购买当前 `biz_type` / `biz_id` 的访问者会看到“已购买”，不再显示付款按钮。
+`amount` 使用最小货币单位：JPY 为日元整数，CNY 为分。短代码渲染时会为每个支付按钮生成包含 `gateway`、`return_to`、`ts`、`nonce` 的 HMAC 签名，创建订单时服务端会重新验签、要求 10 分钟内有效，并一次性消费 nonce，防止用户修改隐藏字段篡改金额或重复提交同一入口。已购买当前 `biz_type` / `biz_id` 的访问者会看到“已购买”，不再显示付款按钮。PayPay 只会在 JPY 订单中展示，微信/支付宝只会在 CNY 订单中展示。
 
 付费阅读内容可以这样包裹：
 
