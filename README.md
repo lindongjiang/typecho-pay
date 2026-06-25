@@ -18,9 +18,23 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 2. 在插件目录执行 `composer install --no-dev`，或发布时一并打包 `vendor/`；插件会自动加载 `vendor/autoload.php`。
 3. 在 Typecho 后台启用 `TypechoPay`。
 4. 在插件设置里启用支付网关并填写商户参数。
-5. 生产环境设置独立的“入口签名密钥”。
+5. 生产环境设置独立的”入口签名密钥”。
 
 启用插件会创建四张表：`{prefix}pay_orders`、`{prefix}pay_events`、`{prefix}pay_entitlements` 和 `{prefix}pay_nonces`。禁用插件不会删除表，便于审计。
+
+## 后台管理
+
+启用插件后，左侧菜单会出现 **TypechoPay** 菜单，包含：
+
+- **支付订单**：查看所有订单，支持按订单号筛选，可对已支付订单重发权益
+- **支付设置说明**：查看回调地址、各网关配置指南、短代码使用说明和常见问题
+
+插件配置在 **后台 → 控制台 → 插件 → TypechoPay → 设置** 中填写，包含：
+
+- **基础设置**：启用支付方式、默认币种、入口签名密钥
+- **PayPay 配置**：环境、API Key、API Secret、Merchant ID
+- **微信支付配置**：AppID、商户号、证书序列号、私钥路径、APIv3 Key 等
+- **支付宝配置**：支付模式、AppID、应用私钥、支付宝公钥、Seller ID
 
 ## 短代码
 
