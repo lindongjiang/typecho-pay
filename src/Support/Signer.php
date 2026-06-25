@@ -35,7 +35,7 @@ final class Signer
 
     private static function canonicalPayload(array $payload): string
     {
-        unset($payload['signature'], $payload['gateway']);
+        unset($payload['signature']);
         ksort($payload);
 
         $pairs = [];

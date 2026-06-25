@@ -11,8 +11,11 @@ use Typecho\Widget\Helper\Form\Element\Password;
 use Typecho\Widget\Helper\Form\Element\Select;
 use Typecho\Widget\Helper\Form\Element\Text;
 use Typecho\Widget\Helper\Form\Element\Textarea;
+use TypechoPlugin\TypechoPay\Services\AccessService;
+use TypechoPlugin\TypechoPay\Support\GuestToken;
 use Utils\Helper;
 use Widget\Options;
+use Widget\User;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
@@ -171,6 +174,8 @@ class Plugin implements PluginInterface
             return $content;
         }
 
+        $content = self::renderProtectedContent($content, $archive);
+
         return preg_replace_callback('/\[typechopay\s+([^\]]+)\]/i', function ($matches) use ($archive) {
             $attrs = self::parseShortcodeAttrs($matches[1]);
             $amount = isset($attrs['amount']) ? (int) $attrs['amount'] : 0;
@@ -195,9 +200,8 @@ class Plugin implements PluginInterface
                 'biz_type' => $attrs['biz_type'] ?? 'post',
                 'biz_id' => (string) ($attrs['biz_id'] ?? ($archive->cid ?? 0)),
             ];
-            $payload['signature'] = Support\Signer::sign($payload, self::signingSecret($options, $config));
 
-            return self::renderPayBox($payload, $gateways, $options);
+            return self::renderPayBox($payload, $gateways, $options, $config);
         }, $content);
     }
 
@@ -242,7 +246,7 @@ class Plugin implements PluginInterface
         return $config['endpointSecret'] !== '' ? $config['endpointSecret'] : (string) $options->secret;
     }
 
-    private static function renderPayBox(array $payload, array $gateways, Options $options): string
+    private static function renderPayBox(array $payload, array $gateways, Options $options, array $config): string
     {
         $action = Common::url('/action/' . self::ACTION . '?do=create', $options->index);
         $labels = [
@@ -253,12 +257,18 @@ class Plugin implements PluginInterface
 
         $buttons = [];
         foreach ($gateways as $gateway) {
+            $signedPayload = $payload + [
+                'gateway' => $gateway,
+                'ts' => (string) time(),
+                'nonce' => bin2hex(random_bytes(8)),
+            ];
+            $signedPayload['signature'] = Support\Signer::sign($signedPayload, self::signingSecret($options, $config));
+
             $fields = '';
-            foreach ($payload as $key => $value) {
+            foreach ($signedPayload as $key => $value) {
                 $fields .= '<input type="hidden" name="' . htmlspecialchars($key) . '" value="'
                     . htmlspecialchars((string) $value) . '">';
             }
-            $fields .= '<input type="hidden" name="gateway" value="' . htmlspecialchars($gateway) . '">';
             $buttons[] = '<form method="post" action="' . htmlspecialchars($action)
                 . '" class="typechopay-form">' . $fields
                 . '<button type="submit">' . htmlspecialchars($labels[$gateway] ?? $gateway) . '</button></form>';
@@ -269,6 +279,27 @@ class Plugin implements PluginInterface
             . '<span class="typechopay-amount">' . htmlspecialchars($payload['currency'] . ' ' . $payload['amount']) . '</span>'
             . implode('', $buttons)
             . '</div>';
+    }
+
+    private static function renderProtectedContent(string $content, $archive): string
+    {
+        if (strpos($content, '[typechopay_content]') === false) {
+            return $content;
+        }
+
+        $bizId = (int) ($archive->cid ?? 0);
+        $user = User::alloc();
+        $userId = $user->hasLogin() ? (int) $user->uid : null;
+        $guestTokenHash = GuestToken::hash(GuestToken::get());
+        $canAccess = (new AccessService(Db::get()))->canAccess('post', $bizId, $userId, $guestTokenHash);
+
+        return preg_replace_callback('/\[typechopay_content\](.*?)\[\/typechopay_content\]/is', function ($matches) use ($canAccess) {
+            if ($canAccess) {
+                return $matches[1];
+            }
+
+            return '<div class="typechopay-locked">' . htmlspecialchars(_t('此内容需要购买后查看。')) . '</div>';
+        }, $content);
     }
 
     private static function parseShortcodeAttrs(string $raw): array
@@ -305,6 +336,8 @@ class Plugin implements PluginInterface
         foreach (self::schemaSql($adapter, $prefix) as $sql) {
             $db->query($sql, Db::WRITE, '');
         }
+
+        self::migrateExistingTables($db, $adapter, $prefix);
     }
 
     private static function schemaSql(string $adapter, string $prefix): array
@@ -324,6 +357,8 @@ class Plugin implements PluginInterface
     {
         $orders = '`' . $prefix . 'pay_orders`';
         $events = '`' . $prefix . 'pay_events`';
+        $entitlements = '`' . $prefix . 'pay_entitlements`';
+        $nonces = '`' . $prefix . 'pay_nonces`';
 
         return [
             "CREATE TABLE IF NOT EXISTS {$orders} (
@@ -355,11 +390,42 @@ class Plugin implements PluginInterface
                 `out_trade_no` VARCHAR(64) NOT NULL,
                 `gateway` VARCHAR(32) NOT NULL,
                 `event_type` VARCHAR(64) NOT NULL,
+                `provider_event_id` VARCHAR(128) DEFAULT NULL,
+                `provider_event_type` VARCHAR(64) DEFAULT NULL,
+                `platform_trade_no` VARCHAR(128) DEFAULT NULL,
+                `remote_ip` VARCHAR(64) DEFAULT NULL,
+                `headers_json` MEDIUMTEXT DEFAULT NULL,
                 `signature_ok` TINYINT(1) NOT NULL DEFAULT 0,
                 `payload` MEDIUMTEXT,
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
-                KEY `idx_order` (`out_trade_no`)
+                KEY `idx_order` (`out_trade_no`),
+                UNIQUE KEY `uniq_provider_event` (`gateway`, `provider_event_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$entitlements} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `order_id` BIGINT UNSIGNED NOT NULL,
+                `biz_type` VARCHAR(32) NOT NULL,
+                `biz_id` BIGINT UNSIGNED NOT NULL,
+                `user_id` BIGINT UNSIGNED DEFAULT NULL,
+                `guest_token_hash` VARCHAR(128) DEFAULT NULL,
+                `starts_at` DATETIME NOT NULL,
+                `expires_at` DATETIME DEFAULT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_order` (`order_id`),
+                KEY `idx_user_access` (`user_id`, `biz_type`, `biz_id`),
+                KEY `idx_guest_access` (`guest_token_hash`, `biz_type`, `biz_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$nonces} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `nonce_hash` VARCHAR(64) NOT NULL,
+                `scope` VARCHAR(64) NOT NULL,
+                `expires_at` DATETIME NOT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_nonce_hash` (`nonce_hash`),
+                KEY `idx_expires_at` (`expires_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         ];
     }
@@ -368,6 +434,8 @@ class Plugin implements PluginInterface
     {
         $orders = '"' . $prefix . 'pay_orders"';
         $events = '"' . $prefix . 'pay_events"';
+        $entitlements = '"' . $prefix . 'pay_entitlements"';
+        $nonces = '"' . $prefix . 'pay_nonces"';
 
         return [
             "CREATE TABLE IF NOT EXISTS {$orders} (
@@ -397,11 +465,38 @@ class Plugin implements PluginInterface
                 out_trade_no TEXT NOT NULL,
                 gateway TEXT NOT NULL,
                 event_type TEXT NOT NULL,
+                provider_event_id TEXT DEFAULT NULL,
+                provider_event_type TEXT DEFAULT NULL,
+                platform_trade_no TEXT DEFAULT NULL,
+                remote_ip TEXT DEFAULT NULL,
+                headers_json TEXT DEFAULT NULL,
                 signature_ok INTEGER NOT NULL DEFAULT 0,
                 payload TEXT,
                 created_at TEXT NOT NULL
             )",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_events_idx_order\" ON {$events} (out_trade_no)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_events_uniq_provider_event\" ON {$events} (gateway, provider_event_id)",
+            "CREATE TABLE IF NOT EXISTS {$entitlements} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL UNIQUE,
+                biz_type TEXT NOT NULL,
+                biz_id INTEGER NOT NULL,
+                user_id INTEGER DEFAULT NULL,
+                guest_token_hash TEXT DEFAULT NULL,
+                starts_at TEXT NOT NULL,
+                expires_at TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_user_access\" ON {$entitlements} (user_id, biz_type, biz_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_guest_access\" ON {$entitlements} (guest_token_hash, biz_type, biz_id)",
+            "CREATE TABLE IF NOT EXISTS {$nonces} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nonce_hash TEXT NOT NULL UNIQUE,
+                scope TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_nonces_idx_expires_at\" ON {$nonces} (expires_at)",
         ];
     }
 
@@ -409,6 +504,8 @@ class Plugin implements PluginInterface
     {
         $orders = '"' . $prefix . 'pay_orders"';
         $events = '"' . $prefix . 'pay_events"';
+        $entitlements = '"' . $prefix . 'pay_entitlements"';
+        $nonces = '"' . $prefix . 'pay_nonces"';
 
         return [
             "CREATE TABLE IF NOT EXISTS {$orders} (
@@ -438,11 +535,76 @@ class Plugin implements PluginInterface
                 out_trade_no VARCHAR(64) NOT NULL,
                 gateway VARCHAR(32) NOT NULL,
                 event_type VARCHAR(64) NOT NULL,
+                provider_event_id VARCHAR(128) DEFAULT NULL,
+                provider_event_type VARCHAR(64) DEFAULT NULL,
+                platform_trade_no VARCHAR(128) DEFAULT NULL,
+                remote_ip VARCHAR(64) DEFAULT NULL,
+                headers_json TEXT DEFAULT NULL,
                 signature_ok SMALLINT NOT NULL DEFAULT 0,
                 payload TEXT,
                 created_at TIMESTAMP NOT NULL
             )",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_events_idx_order\" ON {$events} (out_trade_no)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_events_uniq_provider_event\" ON {$events} (gateway, provider_event_id)",
+            "CREATE TABLE IF NOT EXISTS {$entitlements} (
+                id BIGSERIAL PRIMARY KEY,
+                order_id BIGINT NOT NULL UNIQUE,
+                biz_type VARCHAR(32) NOT NULL,
+                biz_id BIGINT NOT NULL,
+                user_id BIGINT DEFAULT NULL,
+                guest_token_hash VARCHAR(128) DEFAULT NULL,
+                starts_at TIMESTAMP NOT NULL,
+                expires_at TIMESTAMP DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_user_access\" ON {$entitlements} (user_id, biz_type, biz_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_guest_access\" ON {$entitlements} (guest_token_hash, biz_type, biz_id)",
+            "CREATE TABLE IF NOT EXISTS {$nonces} (
+                id BIGSERIAL PRIMARY KEY,
+                nonce_hash VARCHAR(64) NOT NULL UNIQUE,
+                scope VARCHAR(64) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_nonces_idx_expires_at\" ON {$nonces} (expires_at)",
         ];
+    }
+
+    private static function migrateExistingTables(Db $db, string $adapter, string $prefix): void
+    {
+        $isMysql = strpos($adapter, 'mysql') !== false || strpos($adapter, 'mysqli') !== false;
+        $isPgsql = strpos($adapter, 'pgsql') !== false;
+        $table = $isMysql ? '`' . $prefix . 'pay_events`' : '"' . $prefix . 'pay_events"';
+        $index = $isMysql ? $prefix . 'pay_events_uniq_provider_event' : '"' . $prefix . 'pay_events_uniq_provider_event"';
+        $textType = $isMysql ? 'MEDIUMTEXT' : 'TEXT';
+        $string128 = $isMysql || $isPgsql ? 'VARCHAR(128)' : 'TEXT';
+        $string64 = $isMysql || $isPgsql ? 'VARCHAR(64)' : 'TEXT';
+
+        $columns = [
+            "provider_event_id {$string128} DEFAULT NULL",
+            "provider_event_type {$string64} DEFAULT NULL",
+            "platform_trade_no {$string128} DEFAULT NULL",
+            "remote_ip {$string64} DEFAULT NULL",
+            "headers_json {$textType} DEFAULT NULL",
+        ];
+
+        foreach ($columns as $column) {
+            self::trySchema($db, "ALTER TABLE {$table} ADD COLUMN {$column}");
+        }
+
+        if ($isMysql) {
+            self::trySchema($db, "ALTER TABLE {$table} ADD UNIQUE KEY `{$index}` (gateway, provider_event_id)");
+        } else {
+            self::trySchema($db, "CREATE UNIQUE INDEX {$index} ON {$table} (gateway, provider_event_id)");
+        }
+    }
+
+    private static function trySchema(Db $db, string $sql): void
+    {
+        try {
+            $db->query($sql, Db::WRITE, '');
+        } catch (\Throwable $e) {
+            // Schema upgrades are best-effort because Typecho does not expose portable column introspection here.
+        }
     }
 }

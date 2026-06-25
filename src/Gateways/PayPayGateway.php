@@ -51,7 +51,7 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
         }
 
         $event = $data['data'] ?? $data;
-        $state = strtoupper((string) ($event['state'] ?? ''));
+        $state = strtoupper((string) ($event['state'] ?? ($event['status'] ?? '')));
         $outTradeNo = (string) ($event['merchantPaymentId'] ?? ($event['merchant_order_id'] ?? ''));
         if ($outTradeNo === '') {
             throw new \RuntimeException('Missing PayPay merchant payment id.');
@@ -73,15 +73,17 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
             $amount,
             $currency,
             $signatureOk,
-            $data
+            $data,
+            isset($event['notification_id']) ? (string) $event['notification_id'] : null,
+            isset($event['notification_type']) ? (string) $event['notification_type'] : null
         );
     }
 
     public function query(array $order): NotifyResult
     {
-        $response = $this->request('GET', '/v2/payments/' . rawurlencode($order['out_trade_no']));
+        $response = $this->request('GET', '/v2/codes/payments/' . rawurlencode($order['out_trade_no']));
         $event = $response['data'] ?? [];
-        $state = strtoupper((string) ($event['state'] ?? ''));
+        $state = strtoupper((string) ($event['state'] ?? ($event['status'] ?? '')));
         $amount = null;
         $currency = null;
         if (isset($event['amount']) && is_array($event['amount'])) {
@@ -96,7 +98,9 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
             $amount,
             $currency,
             true,
-            $response
+            $response,
+            isset($event['notification_id']) ? (string) $event['notification_id'] : null,
+            'active_query'
         );
     }
 

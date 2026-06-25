@@ -5,6 +5,7 @@ namespace TypechoPlugin\TypechoPay\Gateways;
 use TypechoPlugin\TypechoPay\Contracts\GatewayInterface;
 use TypechoPlugin\TypechoPay\Contracts\NotifyResult;
 use TypechoPlugin\TypechoPay\Contracts\PayCreateResult;
+use TypechoPlugin\TypechoPay\Support\AlipaySdk;
 use TypechoPlugin\TypechoPay\Support\Money;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
@@ -20,15 +21,9 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
             throw new \InvalidArgumentException('Alipay orders must use CNY.');
         }
 
-        if (!class_exists('\\AopClient')) {
-            throw new \RuntimeException('Install Alipay PHP SDK before creating Alipay orders.');
-        }
-
         $client = $this->aopClient();
         if ($this->config['alipayMode'] === 'precreate') {
-            if (!class_exists('\\AlipayTradePrecreateRequest')) {
-                throw new \RuntimeException('AlipayTradePrecreateRequest class is missing.');
-            }
+            AlipaySdk::ensureAop(['AlipayTradePrecreateRequest']);
 
             $request = new \AlipayTradePrecreateRequest();
             $request->setNotifyUrl($this->notifyUrl('alipay'));
@@ -50,9 +45,7 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
             );
         }
 
-        if (!class_exists('\\AlipayTradePagePayRequest')) {
-            throw new \RuntimeException('AlipayTradePagePayRequest class is missing.');
-        }
+        AlipaySdk::ensureAop(['AlipayTradePagePayRequest']);
 
         $request = new \AlipayTradePagePayRequest();
         $request->setNotifyUrl($this->notifyUrl('alipay'));
@@ -70,6 +63,7 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
     public function notify(array $headers, string $rawBody, array $query, array $post): NotifyResult
     {
         $this->requireConfig(['alipayAppId', 'alipayPrivateKey', 'alipayPublicKey']);
+        AlipaySdk::ensureAop();
         $signatureOk = $this->aopClient()->rsaCheckV1($post, null, 'RSA2');
         $status = in_array($post['trade_status'] ?? '', ['TRADE_SUCCESS', 'TRADE_FINISHED'], true) ? 'paid' : 'ignored';
         $amount = isset($post['total_amount']) ? (int) round(((float) $post['total_amount']) * 100) : null;
@@ -89,17 +83,44 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
             $amount,
             'CNY',
             $signatureOk,
-            $post
+            $post,
+            isset($post['notify_id']) ? (string) $post['notify_id'] : null,
+            isset($post['notify_type']) ? (string) $post['notify_type'] : null
         );
     }
 
     public function query(array $order): NotifyResult
     {
-        throw new \RuntimeException('Alipay active query is not implemented in this plugin slice.');
+        $this->requireConfig(['alipayAppId', 'alipayPrivateKey', 'alipayPublicKey']);
+        AlipaySdk::ensureAop(['AlipayTradeQueryRequest']);
+
+        $request = new \AlipayTradeQueryRequest();
+        $request->setBizContent(json_encode([
+            'out_trade_no' => $order['out_trade_no'],
+        ], JSON_UNESCAPED_UNICODE));
+
+        $response = $this->aopClient()->execute($request);
+        $data = json_decode(json_encode($response), true);
+        $result = is_array($data) ? ($data['alipay_trade_query_response'] ?? $data) : [];
+        $tradeStatus = (string) ($result['trade_status'] ?? '');
+        $amount = isset($result['total_amount']) ? (int) round(((float) $result['total_amount']) * 100) : null;
+
+        return new NotifyResult(
+            in_array($tradeStatus, ['TRADE_SUCCESS', 'TRADE_FINISHED'], true) ? 'paid' : strtolower($tradeStatus ?: 'pending'),
+            (string) ($result['out_trade_no'] ?? $order['out_trade_no']),
+            isset($result['trade_no']) ? (string) $result['trade_no'] : null,
+            $amount,
+            'CNY',
+            true,
+            is_array($data) ? $data : [],
+            null,
+            'active_query'
+        );
     }
 
     private function aopClient()
     {
+        AlipaySdk::ensureAop();
         $client = new \AopClient();
         $client->gatewayUrl = 'https://openapi.alipay.com/gateway.do';
         $client->appId = $this->config['alipayAppId'];

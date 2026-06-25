@@ -15,6 +15,8 @@ final class NotifyResult
     public ?string $currency;
     public bool $signatureOk;
     public array $raw;
+    public ?string $providerEventId;
+    public ?string $providerEventType;
 
     public function __construct(
         string $status,
@@ -23,7 +25,9 @@ final class NotifyResult
         ?int $amount,
         ?string $currency,
         bool $signatureOk,
-        array $raw = []
+        array $raw = [],
+        ?string $providerEventId = null,
+        ?string $providerEventType = null
     ) {
         $this->status = $status;
         $this->outTradeNo = $outTradeNo;
@@ -32,6 +36,8 @@ final class NotifyResult
         $this->currency = $currency;
         $this->signatureOk = $signatureOk;
         $this->raw = $raw;
+        $this->providerEventId = $providerEventId;
+        $this->providerEventType = $providerEventType;
     }
 
     public function isPaid(): bool

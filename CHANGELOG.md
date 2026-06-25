@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Fixed PayPay Dynamic QR active query path to `/v2/codes/payments/{merchantPaymentId}`.
+- Added active order query for PayPay, WeChat Pay, and Alipay.
+- Changed `/action/typechopay?do=query` to query the upstream gateway while orders are pending.
+- Added QR payment page rendering with polling.
+- Added signed payment payload expiry, gateway coverage, and one-time nonce consumption.
+- Added `pay_entitlements` and minimal paid-reading access grants.
+- Hardened paid state transitions to only allow payable statuses into `paid`.
+- Added provider event metadata fields for payment event auditing.
+
 ## 0.1.0 - 2026-06-25
 
 - Added TypechoPay plugin entry and activation/deactivation flow.

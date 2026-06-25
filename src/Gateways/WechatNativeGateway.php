@@ -24,23 +24,7 @@ final class WechatNativeGateway extends AbstractGateway implements GatewayInterf
             throw new \RuntimeException('Install wechatpay/wechatpay before creating WeChat Pay orders.');
         }
 
-        $privateKey = \WeChatPay\Crypto\Rsa::from('file://' . $this->config['wechatPrivateKeyPath'], \WeChatPay\Crypto\Rsa::KEY_TYPE_PRIVATE);
-        $certs = [];
-        if ($this->config['wechatPlatformPublicKeyPath'] !== '' && $this->config['wechatPlatformSerial'] !== '') {
-            $certs[$this->config['wechatPlatformSerial']] = \WeChatPay\Crypto\Rsa::from(
-                'file://' . $this->config['wechatPlatformPublicKeyPath'],
-                \WeChatPay\Crypto\Rsa::KEY_TYPE_PUBLIC
-            );
-        }
-
-        $client = \WeChatPay\Builder::factory([
-            'mchid' => $this->config['wechatMchId'],
-            'serial' => $this->config['wechatMerchantSerial'],
-            'privateKey' => $privateKey,
-            'certs' => $certs,
-        ]);
-
-        $response = $client->chain('v3/pay/transactions/native')->post([
+        $response = $this->client()->chain('v3/pay/transactions/native')->post([
             'json' => [
                 'mchid' => $this->config['wechatMchId'],
                 'out_trade_no' => $order['out_trade_no'],
@@ -84,6 +68,13 @@ final class WechatNativeGateway extends AbstractGateway implements GatewayInterf
 
         $amount = $transaction['amount']['total'] ?? null;
         $currency = $transaction['amount']['currency'] ?? 'CNY';
+        if (($transaction['mchid'] ?? '') !== $this->config['wechatMchId']) {
+            throw new \RuntimeException('WeChat Pay mchid mismatch.');
+        }
+
+        if (($transaction['appid'] ?? '') !== $this->config['wechatAppId']) {
+            throw new \RuntimeException('WeChat Pay appid mismatch.');
+        }
 
         return new NotifyResult(
             ($transaction['trade_state'] ?? '') === 'SUCCESS' ? 'paid' : strtolower((string) ($transaction['trade_state'] ?? 'ignored')),
@@ -92,13 +83,45 @@ final class WechatNativeGateway extends AbstractGateway implements GatewayInterf
             $amount === null ? null : (int) $amount,
             strtoupper((string) $currency),
             true,
-            $transaction
+            $transaction,
+            null,
+            'wechatpay_notification'
         );
     }
 
     public function query(array $order): NotifyResult
     {
-        throw new \RuntimeException('WeChat active query is not implemented in this plugin slice.');
+        $response = $this->client()
+            ->chain('v3/pay/transactions/out-trade-no/' . rawurlencode($order['out_trade_no']))
+            ->get(['query' => ['mchid' => $this->config['wechatMchId']]]);
+
+        $transaction = json_decode((string) $response->getBody(), true);
+        if (!is_array($transaction)) {
+            throw new \RuntimeException('Invalid WeChat Pay query response.');
+        }
+
+        if (($transaction['mchid'] ?? '') !== $this->config['wechatMchId']) {
+            throw new \RuntimeException('WeChat Pay query mchid mismatch.');
+        }
+
+        if (($transaction['appid'] ?? '') !== $this->config['wechatAppId']) {
+            throw new \RuntimeException('WeChat Pay query appid mismatch.');
+        }
+
+        $amount = $transaction['amount']['total'] ?? null;
+        $currency = $transaction['amount']['currency'] ?? 'CNY';
+
+        return new NotifyResult(
+            ($transaction['trade_state'] ?? '') === 'SUCCESS' ? 'paid' : strtolower((string) ($transaction['trade_state'] ?? 'pending')),
+            (string) ($transaction['out_trade_no'] ?? $order['out_trade_no']),
+            isset($transaction['transaction_id']) ? (string) $transaction['transaction_id'] : null,
+            $amount === null ? null : (int) $amount,
+            strtoupper((string) $currency),
+            true,
+            $transaction,
+            null,
+            'active_query'
+        );
     }
 
     private function verifySignature(array $headers, string $rawBody): bool
@@ -141,5 +164,29 @@ final class WechatNativeGateway extends AbstractGateway implements GatewayInterf
         }
 
         return $plain;
+    }
+
+    private function client()
+    {
+        $this->requireConfig(['wechatAppId', 'wechatMchId', 'wechatMerchantSerial', 'wechatPrivateKeyPath']);
+        if (!class_exists('\\WeChatPay\\Builder') || !class_exists('\\WeChatPay\\Crypto\\Rsa')) {
+            throw new \RuntimeException('Install wechatpay/wechatpay before using WeChat Pay.');
+        }
+
+        $privateKey = \WeChatPay\Crypto\Rsa::from('file://' . $this->config['wechatPrivateKeyPath'], \WeChatPay\Crypto\Rsa::KEY_TYPE_PRIVATE);
+        $certs = [];
+        if ($this->config['wechatPlatformPublicKeyPath'] !== '' && $this->config['wechatPlatformSerial'] !== '') {
+            $certs[$this->config['wechatPlatformSerial']] = \WeChatPay\Crypto\Rsa::from(
+                'file://' . $this->config['wechatPlatformPublicKeyPath'],
+                \WeChatPay\Crypto\Rsa::KEY_TYPE_PUBLIC
+            );
+        }
+
+        return \WeChatPay\Builder::factory([
+            'mchid' => $this->config['wechatMchId'],
+            'serial' => $this->config['wechatMerchantSerial'],
+            'privateKey' => $privateKey,
+            'certs' => $certs,
+        ]);
     }
 }

@@ -3,8 +3,11 @@
 namespace TypechoPlugin\TypechoPay;
 
 use Typecho\Db;
+use Typecho\Common;
 use TypechoPlugin\TypechoPay\Gateways\GatewayFactory;
+use TypechoPlugin\TypechoPay\Services\NonceService;
 use TypechoPlugin\TypechoPay\Services\OrderService;
+use TypechoPlugin\TypechoPay\Support\GuestToken;
 use TypechoPlugin\TypechoPay\Support\HttpHeaders;
 use TypechoPlugin\TypechoPay\Support\Signer;
 use Widget\ActionInterface;
@@ -63,24 +66,36 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $payload = [
+            'gateway' => $gateway,
             'amount' => (string) $this->request->get('amount'),
             'currency' => strtoupper((string) $this->request->get('currency')),
             'subject' => (string) $this->request->get('subject'),
             'biz_type' => (string) $this->request->get('biz_type'),
             'biz_id' => (string) $this->request->get('biz_id'),
+            'ts' => (string) $this->request->get('ts'),
+            'nonce' => (string) $this->request->get('nonce'),
         ];
 
+        $this->assertFreshPayload($payload);
         if (!Signer::verify($payload, Plugin::signingSecret($this->options, $config), (string) $this->request->get('signature'))) {
             throw new \InvalidArgumentException('Invalid payment entry signature.');
         }
+        (new NonceService(Db::get()))->consume('create', $payload['nonce']);
 
         $this->assertGatewayCurrency($gateway, $payload['currency']);
 
         $orderService = new OrderService(Db::get());
-        $order = $orderService->create($payload + ['gateway' => $gateway], $this->user->hasLogin() ? (int) $this->user->uid : null);
-        $adapter = GatewayFactory::make($gateway, $config, $this->options);
+        $userId = $this->user->hasLogin() ? (int) $this->user->uid : null;
+        $guestTokenHash = $userId === null ? GuestToken::hash(GuestToken::getOrCreate()) : null;
+        $order = $orderService->create($payload + ['gateway' => $gateway], $userId, $guestTokenHash);
+
+        if (!empty($order['reused']) && ($order['pay_url'] || $order['qr_content'])) {
+            $this->renderPayment($order, $this->createResultFromOrder($order));
+            return;
+        }
 
         try {
+            $adapter = GatewayFactory::make($gateway, $config, $this->options);
             $result = $adapter->create($order);
             $orderService->attachCreateResult($order['out_trade_no'], $result);
             $this->renderPayment($order, $result);
@@ -107,7 +122,13 @@ class Action extends BaseOptions implements ActionInterface
         try {
             $result = GatewayFactory::make($gateway, $config, $this->options)
                 ->notify($headers, $rawBody, $_GET, $post);
-            $orderService->recordEvent($result->outTradeNo, $gateway, $result->status, $result->signatureOk, $result->raw);
+            $orderService->recordEvent($result->outTradeNo, $gateway, $result->status, $result->signatureOk, $result->raw, [
+                'provider_event_id' => $result->providerEventId,
+                'provider_event_type' => $result->providerEventType,
+                'platform_trade_no' => $result->platformTradeNo,
+                'remote_ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'headers' => $headers,
+            ]);
 
             if ($result->isPaid()) {
                 $orderService->markPaid($result);
@@ -123,23 +144,33 @@ class Action extends BaseOptions implements ActionInterface
     private function query(): void
     {
         $outTradeNo = (string) $this->request->get('out_trade_no');
-        $order = (new OrderService(Db::get()))->findByOutTradeNo($outTradeNo);
+        $config = Plugin::pluginConfig($this->options);
+        $orderService = new OrderService(Db::get());
+        $order = $orderService->findByOutTradeNo($outTradeNo);
         if (!$order) {
             $this->json(['success' => false, 'error' => 'Order not found.'], 404);
             return;
         }
 
-        $this->json([
-            'success' => true,
-            'data' => [
-                'out_trade_no' => $order['out_trade_no'],
-                'gateway' => $order['gateway'],
-                'status' => $order['status'],
-                'amount' => (int) $order['amount'],
-                'currency' => $order['currency'],
-                'paid_at' => $order['paid_at'],
-            ],
-        ]);
+        if (in_array($order['status'], ['pending', 'processing'], true)) {
+            try {
+                $result = GatewayFactory::make($order['gateway'], $config, $this->options)->query($order);
+                $orderService->recordEvent($result->outTradeNo, $order['gateway'], 'active_query:' . $result->status, $result->signatureOk, $result->raw, [
+                    'provider_event_id' => $result->providerEventId,
+                    'provider_event_type' => $result->providerEventType,
+                    'platform_trade_no' => $result->platformTradeNo,
+                    'remote_ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+                ]);
+
+                if ($result->isPaid()) {
+                    $order = $orderService->markPaid($result);
+                }
+            } catch (\Throwable $e) {
+                error_log('[TypechoPay] Active query failed: ' . $e->getMessage());
+            }
+        }
+
+        $this->json($orderService->publicOrderStatus($orderService->findByOutTradeNo($outTradeNo) ?: $order));
     }
 
     private function paymentReturn(): void
@@ -155,25 +186,41 @@ class Action extends BaseOptions implements ActionInterface
 
     private function renderPayment(array $order, $result): void
     {
-        if ($result->html !== null) {
+        if ($result->type === 'html' && $result->html !== null) {
             $this->response->throwContent($result->html, 'text/html');
             return;
         }
 
-        $payUrl = $result->payUrl ?: $result->qrContent;
+        if ($result->type === 'redirect' && $result->payUrl !== null) {
+            $this->response->redirect($result->payUrl);
+            return;
+        }
+
+        $pollUrl = Common::url('/action/typechopay?do=query&out_trade_no=' . rawurlencode($order['out_trade_no']), $this->options->index);
+        $payUrl = $result->payUrl;
+        $qrContent = $result->qrContent ?: $payUrl;
         $html = '<!doctype html><html><head><meta charset="utf-8"><title>支付订单</title>'
             . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}'
-            . '.box{max-width:640px}.code{word-break:break-all;padding:12px;background:#f6f7f8;border:1px solid #ddd}</style>'
+            . '.box{max-width:640px}.code{word-break:break-all;padding:12px;background:#f6f7f8;border:1px solid #ddd}'
+            . '#typechopay-qrcode{width:240px;height:240px;margin:16px 0}.status{color:#555}</style>'
             . '</head><body><main class="box">'
             . '<h1>支付订单</h1>'
             . '<p>订单号：' . htmlspecialchars($order['out_trade_no']) . '</p>'
             . '<p>金额：' . htmlspecialchars($order['currency'] . ' ' . $order['amount']) . '</p>';
 
-        if ($payUrl) {
-            $html .= '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付链接</a></p>'
-                . '<p class="code">' . htmlspecialchars($payUrl) . '</p>';
-        } elseif ($result->qrContent) {
-            $html .= '<p class="code">' . htmlspecialchars($result->qrContent) . '</p>';
+        if ($result->type === 'qr' && $qrContent) {
+            $html .= '<canvas id="typechopay-qrcode" width="240" height="240" data-text="' . htmlspecialchars($qrContent) . '"></canvas>'
+                . ($payUrl ? '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付 App</a></p>' : '')
+                . '<p class="code">' . htmlspecialchars($qrContent) . '</p>'
+                . '<p class="status" id="typechopay-status">等待支付...</p>'
+                . '<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>'
+                . '<script>(function(){var box=document.getElementById("typechopay-qrcode");'
+                . 'if(window.QRCode&&box){QRCode.toCanvas(box,box.getAttribute("data-text"),{width:240,margin:1});}'
+                . 'var status=document.getElementById("typechopay-status");'
+                . 'setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"){location.reload();}}}).catch(function(){});},3000);'
+                . '}());</script>';
+        } elseif ($payUrl) {
+            $html .= '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付链接</a></p>';
         } else {
             $html .= '<p>支付网关未返回可展示的支付入口。</p>';
         }
@@ -213,5 +260,26 @@ class Action extends BaseOptions implements ActionInterface
         if ($currency !== $expected) {
             throw new \InvalidArgumentException('Currency does not match payment gateway.');
         }
+    }
+
+    private function assertFreshPayload(array $payload): void
+    {
+        $ts = filter_var($payload['ts'] ?? null, FILTER_VALIDATE_INT);
+        if ($ts === false || abs(time() - (int) $ts) > 600) {
+            throw new \InvalidArgumentException('Payment payload expired.');
+        }
+
+        if (!preg_match('/^[a-f0-9]{16}$/', (string) ($payload['nonce'] ?? ''))) {
+            throw new \InvalidArgumentException('Invalid payment payload nonce.');
+        }
+    }
+
+    private function createResultFromOrder(array $order)
+    {
+        return new Contracts\PayCreateResult(
+            $order['qr_content'] ? 'qr' : 'redirect',
+            $order['pay_url'] ?: null,
+            $order['qr_content'] ?: null
+        );
     }
 }

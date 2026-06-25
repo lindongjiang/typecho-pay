@@ -6,11 +6,9 @@
   "require": {
     "php": ">=7.4",
     "ext-json": "*",
-    "ext-openssl": "*"
-  },
-  "suggest": {
-    "wechatpay/wechatpay": "Required for WeChat Pay Native order creation.",
-    "paypayopa/php-sdk": "Optional. This plugin includes a direct PayPay Dynamic QR client, but the SDK can be used for future expansion."
+    "ext-openssl": "*",
+    "wechatpay/wechatpay": "^1.4",
+    "alipaysdk/openapi": "^3.0"
   },
   "autoload": {
     "psr-4": {

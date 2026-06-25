@@ -12,6 +12,9 @@ $payload = [
     'subject' => 'AppFlex 30 day',
     'biz_type' => 'post',
     'biz_id' => '100',
+    'gateway' => 'paypay',
+    'ts' => '1780000000',
+    'nonce' => '1234567890abcdef',
 ];
 
 $secret = 'test-secret';
@@ -27,6 +30,14 @@ $tampered['amount'] = '1';
 
 if (Signer::verify($tampered, $secret, $signature) !== false) {
     fwrite(STDERR, "Expected tampered signature to fail\n");
+    exit(1);
+}
+
+$tamperedGateway = $payload;
+$tamperedGateway['gateway'] = 'wechat';
+
+if (Signer::verify($tamperedGateway, $secret, $signature) !== false) {
+    fwrite(STDERR, "Expected tampered gateway to fail\n");
     exit(1);
 }
 
