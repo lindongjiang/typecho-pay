@@ -1,5 +1,7 @@
 <?php
 
+use Typecho\Common;
+
 if (!defined('__TYPECHO_ADMIN__')) {
     exit;
 }
@@ -7,7 +9,11 @@ if (!defined('__TYPECHO_ADMIN__')) {
 include 'header.php';
 include 'menu.php';
 
-$siteUrl = rtrim($options->index, '/');
+$notifyPayPay = Common::url('/action/typechopay?do=notify&gateway=paypay', $options->index);
+$notifyWechat = Common::url('/action/typechopay?do=notify&gateway=wechat', $options->index);
+$notifyAlipay = Common::url('/action/typechopay?do=notify&gateway=alipay', $options->index);
+$returnPayPay = Common::url('/action/typechopay?do=return&gateway=paypay&out_trade_no={订单号}', $options->index);
+$returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $options->index);
 ?>
 
 <div class="main">
@@ -42,7 +48,7 @@ $siteUrl = rtrim($options->index, '/');
                     <td><strong>PayPay</strong></td>
                     <td>Webhook 通知</td>
                     <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($siteUrl . '/action/typechopay?do=notify&gateway=paypay'); ?></code>
+                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($notifyPayPay); ?></code>
                         <br><small style="color:#888;">在 PayPay 商户后台 → Webhook 设置中填写此 URL</small>
                     </td>
                 </tr>
@@ -50,7 +56,7 @@ $siteUrl = rtrim($options->index, '/');
                     <td><strong>微信支付</strong></td>
                     <td>异步通知</td>
                     <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($siteUrl . '/action/typechopay?do=notify&gateway=wechat'); ?></code>
+                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($notifyWechat); ?></code>
                         <br><small style="color:#888;">在微信支付商户平台 → 开发配置 → 支付配置 中填写此 URL</small>
                     </td>
                 </tr>
@@ -58,7 +64,7 @@ $siteUrl = rtrim($options->index, '/');
                     <td><strong>支付宝</strong></td>
                     <td>异步通知</td>
                     <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($siteUrl . '/action/typechopay?do=notify&gateway=alipay'); ?></code>
+                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($notifyAlipay); ?></code>
                         <br><small style="color:#888;">在支付宝开放平台 → 应用配置 → 开发设置 中填写此 URL</small>
                     </td>
                 </tr>
@@ -86,14 +92,14 @@ $siteUrl = rtrim($options->index, '/');
                 <tr>
                     <td><strong>PayPay</strong></td>
                     <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($siteUrl . '/action/typechopay?do=return&gateway=paypay&out_trade_no={订单号}'); ?></code>
+                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($returnPayPay); ?></code>
                         <br><small style="color:#888;">系统自动处理，无需手动配置</small>
                     </td>
                 </tr>
                 <tr>
                     <td><strong>支付宝</strong></td>
                     <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($siteUrl . '/action/typechopay?do=return&gateway=alipay'); ?></code>
+                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($returnAlipay); ?></code>
                         <br><small style="color:#888;">支付宝 Page Pay 模式会使用此地址，系统自动处理</small>
                     </td>
                 </tr>

@@ -15,10 +15,11 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 ## 安装
 
 1. 将目录放到 `usr/plugins/TypechoPay`。
-2. 在插件目录执行 `composer install --no-dev`，或发布时一并打包 `vendor/`；插件会自动加载 `vendor/autoload.php`。
-3. 在 Typecho 后台启用 `TypechoPay`。
-4. 在插件设置里启用支付网关并填写商户参数。
-5. 生产环境设置独立的”入口签名密钥”。
+2. 确认 PHP 已启用 `json`、`openssl`、`curl` 扩展。
+3. 在插件目录执行 `composer install --no-dev`，或发布时一并打包 `vendor/`；插件会自动加载 `vendor/autoload.php`。
+4. 在 Typecho 后台启用 `TypechoPay`。
+5. 在插件设置里启用支付网关并填写商户参数。
+6. 生产环境设置独立的”入口签名密钥”。
 
 启用插件会创建四张表：`{prefix}pay_orders`、`{prefix}pay_events`、`{prefix}pay_entitlements` 和 `{prefix}pay_nonces`。禁用插件不会删除表，便于审计。
 

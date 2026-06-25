@@ -18,6 +18,8 @@ Aligned payment setup documentation with the current gateway implementation and 
 - Removed config-page pseudo section fields so plugin settings do not persist meaningless section-marker values.
 - Added `.github/workflows/ci.yml` to install dependencies, lint PHP files, and run `tests/SignerTest.php`.
 - Suppressed third-party Alipay SDK deprecation notices while loading SDK files on PHP 8.
+- Declared PHP `ext-curl`, installed curl in CI, and excluded `vendor/` from CI lint.
+- Changed the settings help page to generate callback and return URLs through Typecho `Common::url()`.
 
 ### Verification
 
@@ -31,7 +33,7 @@ Server-side checks should be run after pulling the pushed commit:
 ```sh
 composer validate --no-check-lock --strict
 composer install --no-dev --prefer-dist --no-interaction --no-progress
-find . -name '*.php' -print0 | xargs -0 -n1 php -l
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/SignerTest.php
 ```
 

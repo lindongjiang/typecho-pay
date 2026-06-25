@@ -7,10 +7,12 @@
 - Clarified CNY shortcode amounts are written in cents and converted to yuan for Alipay.
 - Added minimal GitHub Actions CI for dependency install, PHP lint, and signer tests.
 - Suppressed third-party Alipay SDK deprecation notices while loading SDK files on PHP 8.
+- Declared the PHP cURL extension and excluded `vendor/` from CI lint.
+- Generated settings-help callback URLs with Typecho `Common::url()`.
 
 ## 0.2.0 - 2026-06-25
 
-- Enhanced plugin config UI with grouped sections: Basic, PayPay, WeChat Pay, Alipay
+- Reorganized plugin config fields by Basic, PayPay, WeChat Pay, and Alipay sections
 - Added detailed descriptions and help text for all configuration fields
 - Added direct links to payment platform dashboards (PayPay, WeChat, Alipay)
 - Created settings-help.php admin panel with callback URLs display

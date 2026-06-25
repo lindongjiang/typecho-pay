@@ -18,7 +18,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.0'
-          extensions: json, openssl
+          extensions: json, openssl, curl
           coverage: none
 
       - name: Validate Composer metadata
@@ -28,7 +28,10 @@ jobs:
         run: composer install --no-dev --prefer-dist --no-interaction --no-progress
 
       - name: Lint PHP files
-        run: find . -name '*.php' -print0 | xargs -0 -n1 php -l
+        run: |
+          find . \
+            -path './vendor' -prune -o \
+            -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Run signer tests
         run: php tests/SignerTest.php
