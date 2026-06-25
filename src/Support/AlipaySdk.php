@@ -31,11 +31,23 @@ final class AlipaySdk
         foreach ($roots as $root) {
             $path = $root . '/' . $relativePath;
             if (is_file($path)) {
-                require_once $path;
+                self::requireSdkFile($path);
                 return;
             }
         }
 
         throw new \RuntimeException('Install alipaysdk/openapi before using Alipay.');
+    }
+
+    private static function requireSdkFile(string $path): void
+    {
+        $previous = error_reporting();
+
+        try {
+            error_reporting($previous & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+            require_once $path;
+        } finally {
+            error_reporting($previous);
+        }
     }
 }

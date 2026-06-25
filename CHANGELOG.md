@@ -6,6 +6,7 @@
 - Clarified that Alipay currently supports ordinary public-key mode only.
 - Clarified CNY shortcode amounts are written in cents and converted to yuan for Alipay.
 - Added minimal GitHub Actions CI for dependency install, PHP lint, and signer tests.
+- Suppressed third-party Alipay SDK deprecation notices while loading SDK files on PHP 8.
 
 ## 0.2.0 - 2026-06-25
 

@@ -17,6 +17,7 @@ Aligned payment setup documentation with the current gateway implementation and 
 - Split the duplicated `0.1.0` changelog section into `0.1.1` and `0.1.0`.
 - Removed config-page pseudo section fields so plugin settings do not persist meaningless section-marker values.
 - Added `.github/workflows/ci.yml` to install dependencies, lint PHP files, and run `tests/SignerTest.php`.
+- Suppressed third-party Alipay SDK deprecation notices while loading SDK files on PHP 8.
 
 ### Verification
 
