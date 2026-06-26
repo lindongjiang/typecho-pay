@@ -220,36 +220,88 @@ final class CardCodeService
 
     /**
      * Paginated card sales (delivered items with order info).
+     * Uses Typecho query builder instead of raw JOINs for compatibility.
      */
     public function sales(int $productId = 0, int $page = 1, int $perPage = 50): array
     {
-        $cardTable = $this->quotedTable('pay_card_items');
-        $orderTable = $this->quotedTable('pay_orders');
-        $fulfillmentTable = $this->quotedTable('pay_fulfillments');
-
-        $where = "ci.status = 'delivered'";
+        // Count delivered cards.
+        $countSelect = $this->db->select('COUNT(*) AS cnt')->from('table.pay_card_items')
+            ->where('status = ?', 'delivered');
         if ($productId > 0) {
-            $where .= " AND ci.product_id = " . (int) $productId;
+            $countSelect->where('product_id = ?', $productId);
         }
-
-        $countRow = $this->db->fetchRow(
-            "SELECT COUNT(*) AS cnt FROM {$cardTable} ci WHERE {$where}"
-        );
+        $countRow = $this->db->fetchRow($countSelect);
         $total = (int) ($countRow['cnt'] ?? 0);
 
+        // Fetch delivered cards with pagination.
         $offset = max(0, ($page - 1) * $perPage);
-        $rows = $this->db->fetchAll(
-            "SELECT ci.id AS card_id, ci.product_id, ci.batch_id, ci.delivered_order_id, ci.delivered_at,
-                    o.out_trade_no, o.amount, o.currency, o.gateway, o.user_id, o.guest_token_hash,
-                    o.payment_status, o.fulfillment_status, o.paid_at,
-                    f.attempts, f.last_error, f.status AS fulfillment_detail_status
-             FROM {$cardTable} ci
-             LEFT JOIN {$orderTable} o ON ci.delivered_order_id = o.id
-             LEFT JOIN {$fulfillmentTable} f ON f.order_id = o.id AND f.card_item_id = ci.id
-             WHERE {$where}
-             ORDER BY ci.delivered_at DESC
-             LIMIT {$perPage} OFFSET {$offset}"
-        );
+        $cardSelect = $this->db->select()->from('table.pay_card_items')
+            ->where('status = ?', 'delivered')
+            ->order('delivered_at', Db::SORT_DESC)
+            ->limit($perPage)
+            ->offset($offset);
+        if ($productId > 0) {
+            $cardSelect->where('product_id = ?', $productId);
+        }
+        $cards = $this->db->fetchAll($cardSelect);
+
+        // Enrich each card with order and fulfillment data.
+        $rows = [];
+        foreach ($cards as $card) {
+            $row = [
+                'card_id' => (int) $card['id'],
+                'product_id' => (int) $card['product_id'],
+                'batch_id' => isset($card['batch_id']) ? (int) $card['batch_id'] : 0,
+                'delivered_order_id' => isset($card['delivered_order_id']) ? (int) $card['delivered_order_id'] : null,
+                'delivered_at' => $card['delivered_at'] ?? null,
+                'out_trade_no' => null,
+                'amount' => null,
+                'currency' => null,
+                'gateway' => null,
+                'user_id' => null,
+                'guest_token_hash' => null,
+                'payment_status' => null,
+                'fulfillment_status' => null,
+                'paid_at' => null,
+                'attempts' => 0,
+                'last_error' => null,
+                'fulfillment_detail_status' => null,
+            ];
+
+            // Load order info.
+            $orderId = (int) ($card['delivered_order_id'] ?? 0);
+            if ($orderId > 0) {
+                $order = $this->db->fetchRow(
+                    $this->db->select()->from('table.pay_orders')->where('id = ?', $orderId)->limit(1)
+                );
+                if ($order) {
+                    $row['out_trade_no'] = $order['out_trade_no'];
+                    $row['amount'] = (int) $order['amount'];
+                    $row['currency'] = $order['currency'];
+                    $row['gateway'] = $order['gateway'];
+                    $row['user_id'] = $order['user_id'] ?? null;
+                    $row['guest_token_hash'] = $order['guest_token_hash'] ?? null;
+                    $row['payment_status'] = $order['payment_status'] ?? null;
+                    $row['fulfillment_status'] = $order['fulfillment_status'] ?? null;
+                    $row['paid_at'] = $order['paid_at'] ?? null;
+
+                    // Load fulfillment info.
+                    $fulfillment = $this->db->fetchRow(
+                        $this->db->select()->from('table.pay_fulfillments')
+                            ->where('order_id = ?', $orderId)
+                            ->where('card_item_id = ?', (int) $card['id'])
+                            ->limit(1)
+                    );
+                    if ($fulfillment) {
+                        $row['attempts'] = (int) ($fulfillment['attempts'] ?? 0);
+                        $row['last_error'] = $fulfillment['last_error'] ?? null;
+                        $row['fulfillment_detail_status'] = $fulfillment['status'] ?? null;
+                    }
+                }
+            }
+
+            $rows[] = $row;
+        }
 
         return ['rows' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage];
     }
@@ -430,66 +482,59 @@ final class CardCodeService
 
     public function releaseExpiredReservations(?int $productId = null): void
     {
-        // Only release cards whose associated orders are NOT paid.
-        // Paid orders must keep their reservation so delivery can proceed.
+        // Only release cards whose associated orders are NOT paid/processing.
+        // Use query builder: find expired card IDs, check order status, then update.
         $now = date('Y-m-d H:i:s');
-        $cardTable = $this->quotedTable('pay_card_items');
-        $orderTable = $this->quotedTable('pay_orders');
 
-        $sql = "UPDATE {$cardTable} ci
-            LEFT JOIN {$orderTable} o ON ci.reserved_order_id = o.id
-            SET ci.status = 'available',
-                ci.reserved_order_id = NULL,
-                ci.reserved_until = NULL,
-                ci.updated_at = '{$now}'
-            WHERE ci.status = 'reserved'
-              AND ci.reserved_until IS NOT NULL
-              AND ci.reserved_until < '{$now}'
-              AND (o.id IS NULL OR o.payment_status NOT IN ('paid', 'processing'))";
-
+        $select = $this->db->select('id', 'reserved_order_id')->from('table.pay_card_items')
+            ->where('status = ?', 'reserved')
+            ->where('reserved_until IS NOT NULL')
+            ->where('reserved_until < ?', $now);
         if ($productId !== null && $productId > 0) {
-            $sql .= " AND ci.product_id = " . (int) $productId;
+            $select->where('product_id = ?', $productId);
         }
 
-        try {
-            $this->db->query($sql, Db::WRITE, '');
-        } catch (\Throwable $e) {
-            // Fallback for SQLite/PostgreSQL: use subquery approach.
-            // First find expired reservations with unpaid orders, then release them.
-            $adapter = strtolower($this->db->getAdapterName());
-            if (strpos($adapter, 'sqlite') !== false) {
-                $this->releaseExpiredReservationsSqlite($productId, $now);
-                return;
-            }
-            // PostgreSQL: use EXISTS subquery.
-            $this->releaseExpiredReservationsSubquery($productId, $now);
-        }
-    }
-
-    private function releaseExpiredReservationsSqlite(?int $productId, string $now): void
-    {
-        $cardTable = $this->quotedTable('pay_card_items');
-        $orderTable = $this->quotedTable('pay_orders');
-
-        // SQLite: collect IDs first, then update.
-        $sql = "SELECT ci.id FROM {$cardTable} ci
-            LEFT JOIN {$orderTable} o ON ci.reserved_order_id = o.id
-            WHERE ci.status = 'reserved'
-              AND ci.reserved_until IS NOT NULL
-              AND ci.reserved_until < '{$now}'
-              AND (o.id IS NULL OR o.payment_status NOT IN ('paid', 'processing'))";
-
-        if ($productId !== null && $productId > 0) {
-            $sql .= " AND ci.product_id = " . (int) $productId;
-        }
-
-        $rows = $this->db->fetchAll($sql);
-        if (!$rows) {
+        $expiredCards = $this->db->fetchAll($select);
+        if (!$expiredCards) {
             return;
         }
 
-        $ids = array_map(fn($r) => (int) $r['id'], $rows);
-        foreach (array_chunk($ids, 500) as $chunk) {
+        // Collect order IDs to check payment status.
+        $orderIds = [];
+        foreach ($expiredCards as $card) {
+            $oid = (int) ($card['reserved_order_id'] ?? 0);
+            if ($oid > 0) {
+                $orderIds[$oid] = true;
+            }
+        }
+
+        // Fetch paid/processing order IDs.
+        $paidOrderIds = [];
+        if ($orderIds) {
+            $orders = $this->db->fetchAll(
+                $this->db->select('id')->from('table.pay_orders')
+                    ->where('id IN ?', array_keys($orderIds))
+                    ->where('payment_status IN ?', ['paid', 'processing'])
+            );
+            foreach ($orders as $o) {
+                $paidOrderIds[(int) $o['id']] = true;
+            }
+        }
+
+        // Release only cards whose orders are NOT paid/processing.
+        $releaseIds = [];
+        foreach ($expiredCards as $card) {
+            $oid = (int) ($card['reserved_order_id'] ?? 0);
+            if ($oid <= 0 || !isset($paidOrderIds[$oid])) {
+                $releaseIds[] = (int) $card['id'];
+            }
+        }
+
+        if (!$releaseIds) {
+            return;
+        }
+
+        foreach (array_chunk($releaseIds, 500) as $chunk) {
             $this->db->query($this->db->update('table.pay_card_items')->rows([
                 'status' => 'available',
                 'reserved_order_id' => null,
@@ -497,35 +542,6 @@ final class CardCodeService
                 'updated_at' => $now,
             ])->where('id IN ?', $chunk));
         }
-    }
-
-    private function releaseExpiredReservationsSubquery(?int $productId, string $now): void
-    {
-        $cardTable = $this->quotedTable('pay_card_items');
-        $orderTable = $this->quotedTable('pay_orders');
-
-        $sql = "UPDATE {$cardTable}
-            SET status = 'available',
-                reserved_order_id = NULL,
-                reserved_until = NULL,
-                updated_at = '{$now}'
-            WHERE status = 'reserved'
-              AND reserved_until IS NOT NULL
-              AND reserved_until < '{$now}'
-              AND (
-                reserved_order_id IS NULL
-                OR NOT EXISTS (
-                    SELECT 1 FROM {$orderTable}
-                    WHERE {$orderTable}.id = {$cardTable}.reserved_order_id
-                      AND {$orderTable}.payment_status IN ('paid', 'processing')
-                )
-              )";
-
-        if ($productId !== null && $productId > 0) {
-            $sql .= " AND product_id = " . (int) $productId;
-        }
-
-        $this->db->query($sql, Db::WRITE, '');
     }
 
     private function findOrderCard(int $productId, int $orderId, array $statuses): ?array
