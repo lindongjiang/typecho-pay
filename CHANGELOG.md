@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-06-26
+
+- Added admin product and card-code inventory management panel.
+- Added encrypted card-code import using AES-256-GCM and per-product duplicate fingerprints.
+- Added card-code reservation before gateway creation and idempotent delivery after payment success.
+- Added release of reserved card-code stock when orders fail, expire, cancel, or close.
+- Added secure card delivery page guarded by poll token or order ownership.
+- Added `CardCodeCipherTest` for encrypted card-code round trips.
 - Added product-mode payment entries that resolve current server-side product price by `product` or `product_id`.
 - Added product snapshot columns to orders and created product, deliverable, fulfillment, card batch, and card inventory tables.
 - Split payment state into `payment_status` and fulfillment state into `fulfillment_status` while keeping legacy `status`.

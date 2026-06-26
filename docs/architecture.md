@@ -11,7 +11,7 @@ Typecho 只承担订单中心职责：
 - Webhook 失败时主动查单补状态
 - 幂等更新订单状态
 - 保留事件审计
-- 通过交付处理器发放付费阅读权益
+- 通过交付处理器发放付费阅读权益和卡密
 
 支付渠道被隔离在 `src/Gateways` 下，业务层不直接依赖某个支付 SDK。
 支付网关只判断“钱是否支付成功”，商品和交付层决定“付款后给用户什么”。
@@ -24,16 +24,19 @@ flowchart LR
   B --> C["/action/typechopay?do=prepare"]
   C --> D["ProductService 读取当前商品"]
   D --> E["pay_orders pending + product snapshot + poll_token_hash"]
-  E --> F["Gateway create"]
-  F --> G["用户支付"]
-  G --> H["/action/typechopay?do=notify"]
-  H --> I["验签/解密/金额校验"]
-  I --> J["pay_events"]
-  I --> K["payment_status=paid"]
-  K --> L["FulfillmentManager"]
-  L --> M["pay_fulfillments"]
-  L --> N["pay_entitlements"]
-  M --> O["fulfillment_status=fulfilled/partial/failed"]
+  E --> F["FulfillmentManager reserve"]
+  F --> G["cardcode: available -> reserved"]
+  F --> H["Gateway create"]
+  H --> I["用户支付"]
+  I --> J["/action/typechopay?do=notify"]
+  J --> K["验签/解密/金额校验"]
+  K --> L["pay_events"]
+  K --> M["payment_status=paid"]
+  M --> N["FulfillmentManager fulfill"]
+  N --> O["pay_fulfillments"]
+  N --> P["pay_entitlements"]
+  N --> Q["cardcode: reserved -> delivered"]
+  O --> R["fulfillment_status=fulfilled/partial/failed"]
 ```
 
 ## 关键表
@@ -42,15 +45,15 @@ flowchart LR
 
 `pay_events` 是通知/主动查单事件表。即使通知失败，也保留事件类型、签名结果、provider event id/type、平台交易号、远端 IP、请求头和 payload 摘要，方便排查支付平台重试。
 
-`pay_products` 保存当前商品价格、币种、购买策略和库存策略。`pay_product_deliverables` 保存商品的交付规则，例如 `post_access`、`content_block`，后续可扩展 `cardcode`、`membership`、`download`。
+`pay_products` 保存当前商品价格、币种、购买策略和库存策略。`pay_product_deliverables` 保存商品的交付规则，例如 `post_access`、`content_block`、`cardcode`，后续可扩展 `membership`、`download`。
 
 `pay_fulfillments` 是订单交付记录表，以 `(order_id, deliverable_id)` 去重。重复支付回调会复用已有交付结果，不会重复发放同一个交付项。
 
-`pay_entitlements` 是最小权益表。订单确认支付后先进入 `paid_pending_grant`，由 `FulfillmentManager` 调用对应 handler 写入权益；写入成功后订单 `status=paid` 且 `fulfillment_status=fulfilled`，失败时保留 `payment_status=paid` 并进入 `grant_failed` / `fulfillment_status=failed`，后台可重发权益。
+`pay_entitlements` 是最小权益表。订单确认支付后先进入 `paid_pending_grant`，由 `FulfillmentManager` 调用对应 handler 写入权益或卡密交付；写入成功后订单 `status=paid` 且 `fulfillment_status=fulfilled`，失败时保留 `payment_status=paid` 并进入 `grant_failed` / `fulfillment_status=failed`，后台可重发交付。
 
 `pay_nonces` 是旧版 `do=create` 兼容入口的一次性 nonce 表。新版短代码默认走 `do=prepare`，点击时动态创建订单并生成轮询凭证，避免缓存页面复用短期 nonce。
 
-`pay_card_batches` 和 `pay_card_items` 是后续卡密库存的准备表。库存项保存密文、指纹和 `available/reserved/delivered/void/compromised` 状态；当前版本尚未实现卡密导入、原子预留和发货 handler。
+`pay_card_batches` 记录后台导入批次。`pay_card_items` 保存卡密库存，正文使用 AES-256-GCM 密文保存，基于站点密钥的 HMAC 指纹用于同一商品内去重，状态包括 `available`、`reserved`、`delivered`、`void`、`compromised`。创建订单时通过条件更新把一张 `available` 卡改为 `reserved`，支付成功后改为 `delivered`，支付失败/取消/过期/关闭时释放未交付的预留。
 
 ## 网关契约
 
@@ -74,8 +77,12 @@ flowchart LR
 - `release(array $order, array $deliverable): void`
 - `revoke(array $order, array $deliverable): void`
 
-当前 `FulfillmentManager` 已接入 `post_access` 和 `content_block`，都会写入 `pay_entitlements`。`cardcode` handler 会在库存导入、预留、过期释放、退款标记策略完成后再启用。
+当前 `FulfillmentManager` 已接入：
+
+- `post_access`：写入 `pay_entitlements`
+- `content_block`：写入 `pay_entitlements`
+- `cardcode`：预留库存、支付成功交付、失败释放
 
 ## 当前边界
 
-此版本是商品和交付底座，不是完整卡密/库存交付系统。已支付后只发放 `post_access` 或 `content_block` 权益；下载资源、VIP、余额、积分、优惠码、卡密后台导入、卡密原子预留和退款撤销仍需要独立业务处理器扩展。
+当前卡密闭环已经覆盖后台导入、下单预留、支付后交付、重复回调幂等、失败释放和用户凭证查看。尚未实现低库存邮件、退款撤销后的 `compromised` 自动标记、管理员手动作废/补发、下载资源、VIP、余额、积分和优惠码处理器。

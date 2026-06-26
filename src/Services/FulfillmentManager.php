@@ -47,6 +47,31 @@ final class FulfillmentManager
         return 'failed';
     }
 
+    public function reserveOrder(array $order): void
+    {
+        foreach ($this->deliverablesForOrder($order) as $deliverable) {
+            if (($deliverable['handler'] ?? '') === 'cardcode') {
+                (new CardCodeService($this->db))->reserveForOrder($order);
+            }
+        }
+    }
+
+    public function releaseOrder(array $order): void
+    {
+        (new CardCodeService($this->db))->releaseOrderReservations($order);
+    }
+
+    public function orderHasHandler(array $order, string $handler): bool
+    {
+        foreach ($this->deliverablesForOrder($order) as $deliverable) {
+            if (($deliverable['handler'] ?? '') === $handler) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function fulfillDeliverable(array $order, array $deliverable): string
     {
         $existing = $this->findFulfillment((int) $order['id'], (int) $deliverable['id']);
@@ -66,6 +91,7 @@ final class FulfillmentManager
             $result = $this->runHandler($order, $deliverable);
             $this->upsertFulfillment($order, $deliverable, [
                 'status' => 'fulfilled',
+                'card_item_id' => isset($result['card_item_id']) ? (int) $result['card_item_id'] : null,
                 'result_json' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'last_error' => null,
                 'fulfilled_at' => date('Y-m-d H:i:s'),
@@ -99,6 +125,16 @@ final class FulfillmentManager
             ]);
 
             return ['handler' => $handler, 'granted' => true];
+        }
+
+        if ($handler === 'cardcode') {
+            $card = (new CardCodeService($this->db))->deliverForOrder($order);
+
+            return [
+                'handler' => 'cardcode',
+                'card_item_id' => (int) $card['id'],
+                'delivered' => true,
+            ];
         }
 
         throw new \RuntimeException('Fulfillment handler is not implemented: ' . $handler);

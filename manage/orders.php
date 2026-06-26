@@ -80,7 +80,7 @@ $orders = $db->fetchAll($select);
                             <?php if (in_array($order['status'], ['paid', 'paid_pending_grant', 'grant_failed'], true) || in_array(($order['fulfillment_status'] ?? ''), ['failed', 'partial'], true)): ?>
                                 <form method="post" action="<?php echo htmlspecialchars($security->getIndex('/action/typechopay?do=grant')); ?>">
                                     <input type="hidden" name="out_trade_no" value="<?php echo htmlspecialchars($order['out_trade_no']); ?>">
-                                    <button class="btn btn-xs" type="submit"><?php _e('重发权益'); ?></button>
+                                    <button class="btn btn-xs" type="submit"><?php _e('重发交付'); ?></button>
                                 </form>
                             <?php endif; ?>
                         </td>

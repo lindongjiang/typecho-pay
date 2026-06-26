@@ -216,6 +216,11 @@ final class OrderService
             return;
         }
 
+        $order = $this->findByOutTradeNo($outTradeNo);
+        if ($order) {
+            (new FulfillmentManager($this->db))->releaseOrder($order);
+        }
+
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'failed',
             'payment_status' => 'failed',
@@ -267,6 +272,7 @@ final class OrderService
         }
 
         $this->assertResultMatchesOrder($order, $result);
+        (new FulfillmentManager($this->db))->releaseOrder($order);
 
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => $normalized,
@@ -357,6 +363,7 @@ final class OrderService
                 'amount_display' => Money::formatForDisplay((int) $order['amount'], (string) $order['currency']),
                 'paid_at' => $order['paid_at'],
                 'terminal' => $this->isTerminalStatus((string) $order['status']),
+                'has_card_delivery' => (new FulfillmentManager($this->db))->orderHasHandler($order, 'cardcode'),
             ],
         ];
     }

@@ -5,6 +5,8 @@ namespace TypechoPlugin\TypechoPay;
 use Typecho\Db;
 use Typecho\Common;
 use TypechoPlugin\TypechoPay\Gateways\GatewayFactory;
+use TypechoPlugin\TypechoPay\Services\CardCodeService;
+use TypechoPlugin\TypechoPay\Services\FulfillmentManager;
 use TypechoPlugin\TypechoPay\Services\GuestClaimService;
 use TypechoPlugin\TypechoPay\Services\NonceService;
 use TypechoPlugin\TypechoPay\Services\OrderService;
@@ -48,6 +50,11 @@ class Action extends BaseOptions implements ActionInterface
 
             if ($do === 'return') {
                 $this->paymentReturn();
+                return;
+            }
+
+            if ($do === 'delivery') {
+                $this->delivery();
                 return;
             }
 
@@ -144,6 +151,7 @@ class Action extends BaseOptions implements ActionInterface
         $order = $orderService->create($orderInput + ['gateway' => $gateway], $userId, $guestTokenHash);
 
         try {
+            (new FulfillmentManager(Db::get()))->reserveOrder($order);
             $adapter = GatewayFactory::make($gateway, $config, $this->options);
             $orderService->markProcessing($order['out_trade_no']);
             $result = $adapter->create($order);
@@ -267,6 +275,13 @@ class Action extends BaseOptions implements ActionInterface
 
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? $this->request->get('return_to')));
         $fulfillmentStatus = (string) ($order['fulfillment_status'] ?? '');
+        if ($order
+            && $order['status'] === 'paid'
+            && (new FulfillmentManager(Db::get()))->orderHasHandler($order, 'cardcode')) {
+            $this->renderDeliveryPage($order, (string) $this->request->get('poll_token'), $returnTo);
+            return;
+        }
+
         if ($order && $order['status'] === 'paid' && !in_array($fulfillmentStatus, ['failed', 'partial'], true)) {
             $this->response->redirect($returnTo);
             return;
@@ -300,6 +315,28 @@ class Action extends BaseOptions implements ActionInterface
         $this->response->redirect($this->request->getReferer() ?: (string) $this->options->adminUrl);
     }
 
+    private function delivery(): void
+    {
+        $outTradeNo = (string) $this->request->get('out_trade_no');
+        $orderService = new OrderService(Db::get());
+        $order = $orderService->findByOutTradeNo($outTradeNo);
+        if (!$order) {
+            $this->response->setStatus(404);
+            $this->response->throwContent('<!doctype html><meta charset="utf-8"><title>Card Delivery</title><p>订单不存在。</p>', 'text/html');
+            return;
+        }
+
+        $pollToken = (string) $this->request->get('poll_token');
+        if (!$this->canReadOrder($orderService, $order, $pollToken)) {
+            $this->response->setStatus(403);
+            $this->response->throwContent('<!doctype html><meta charset="utf-8"><title>Card Delivery</title><p>订单访问凭证无效。</p>', 'text/html');
+            return;
+        }
+
+        $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? ''));
+        $this->renderDeliveryPage($order, $pollToken, $returnTo);
+    }
+
     private function renderPayment(array $order, $result): void
     {
         $this->setNoStoreHeaders();
@@ -316,6 +353,11 @@ class Action extends BaseOptions implements ActionInterface
 
         $pollUrl = Common::url(
             '/action/typechopay?do=query&out_trade_no=' . rawurlencode($order['out_trade_no'])
+            . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
+            $this->options->index
+        );
+        $deliveryUrl = Common::url(
+            '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode($order['out_trade_no'])
             . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
             $this->options->index
         );
@@ -341,12 +383,63 @@ class Action extends BaseOptions implements ActionInterface
                 . 'if(window.QRCode&&box){new QRCode(box,{text:box.getAttribute("data-text"),width:240,height:240,correctLevel:QRCode.CorrectLevel.M});}'
                 . 'var status=document.getElementById("typechopay-status");'
                 . 'var returnTo=' . json_encode($returnTo) . ';'
-                . 'var timer=setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"&&j.data.fulfillment_status!=="failed"&&j.data.fulfillment_status!=="partial"){clearInterval(timer);location.href=returnTo;}else if(j.data.status==="grant_failed"||j.data.fulfillment_status==="failed"||j.data.fulfillment_status==="partial"){clearInterval(timer);status.textContent="支付成功，交付未完全完成，请联系站点管理员。";}else if(j.data.terminal){clearInterval(timer);status.textContent="订单状态："+j.data.status+"，请重新发起支付。";}}}).catch(function(){});},3000);'
+                . 'var deliveryUrl=' . json_encode($deliveryUrl) . ';'
+                . 'var timer=setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"&&j.data.fulfillment_status!=="failed"&&j.data.fulfillment_status!=="partial"){clearInterval(timer);location.href=j.data.has_card_delivery?deliveryUrl:returnTo;}else if(j.data.status==="grant_failed"||j.data.fulfillment_status==="failed"||j.data.fulfillment_status==="partial"){clearInterval(timer);status.textContent="支付成功，交付未完全完成，请联系站点管理员。";}else if(j.data.terminal){clearInterval(timer);status.textContent="订单状态："+j.data.status+"，请重新发起支付。";}}}).catch(function(){});},3000);'
                 . '}());</script>';
         } elseif ($payUrl) {
             $html .= '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付链接</a></p>';
         } else {
             $html .= '<p>支付网关未返回可展示的支付入口。</p>';
+        }
+
+        $html .= '</main></body></html>';
+        $this->response->throwContent($html, 'text/html');
+    }
+
+    private function renderDeliveryPage(array $order, string $pollToken, string $returnTo): void
+    {
+        $this->setNoStoreHeaders();
+        $cards = [];
+        if ((string) ($order['status'] ?? '') === 'paid') {
+            $cards = (new CardCodeService(Db::get()))->deliveredCardsForOrder($order);
+        }
+
+        $html = '<!doctype html><html><head><meta charset="utf-8"><title>卡密交付</title>'
+            . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}'
+            . '.box{max-width:760px}.card{border:1px solid #ddd;background:#fafafa;padding:14px;margin:12px 0}'
+            . '.value{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;background:#fff;padding:8px;border:1px solid #e5e5e5}</style>'
+            . '</head><body><main class="box">'
+            . '<h1>卡密交付</h1>'
+            . '<p>订单号：' . htmlspecialchars((string) $order['out_trade_no']) . '</p>'
+            . '<p>订单状态：' . htmlspecialchars((string) ($order['status'] ?? 'unknown')) . '</p>'
+            . '<p>交付状态：' . htmlspecialchars((string) ($order['fulfillment_status'] ?? '')) . '</p>';
+
+        if ($cards) {
+            foreach ($cards as $card) {
+                $html .= '<section class="card">'
+                    . '<p><strong>卡号 / 兑换码</strong></p>'
+                    . '<p class="value">' . htmlspecialchars((string) $card['code']) . '</p>';
+                if ($card['secret'] !== null && $card['secret'] !== '') {
+                    $html .= '<p><strong>卡密 / 密钥</strong></p>'
+                        . '<p class="value">' . htmlspecialchars((string) $card['secret']) . '</p>';
+                }
+                $html .= '<p>交付时间：' . htmlspecialchars((string) ($card['delivered_at'] ?? '')) . '</p>'
+                    . '</section>';
+            }
+        } elseif ((string) ($order['status'] ?? '') === 'paid') {
+            $html .= '<p>支付已完成，但卡密暂未交付完成。请联系站点管理员处理。</p>';
+        } else {
+            $html .= '<p>订单尚未完成支付，暂不能查看卡密。</p>';
+        }
+
+        $deliveryUrl = Common::url(
+            '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode((string) $order['out_trade_no'])
+            . ($pollToken !== '' ? '&poll_token=' . rawurlencode($pollToken) : ''),
+            $this->options->index
+        );
+        $html .= '<p><a href="' . htmlspecialchars($deliveryUrl) . '">刷新交付状态</a></p>';
+        if ($returnTo !== '') {
+            $html .= '<p><a href="' . htmlspecialchars($returnTo) . '">返回原页面</a></p>';
         }
 
         $html .= '</main></body></html>';

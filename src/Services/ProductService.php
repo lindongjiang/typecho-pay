@@ -142,7 +142,7 @@ final class ProductService
         }
 
         $productKey = trim((string) ($input['product'] ?? ''));
-        return $productKey !== '' && strpos($productKey, ':') === false;
+        return $productKey !== '';
     }
 
     private function findStoredProduct(array $input): ?array

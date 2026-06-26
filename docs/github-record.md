@@ -2,6 +2,38 @@
 
 Date: 2026-06-25
 
+## 2026-06-26 Card-Code Fulfillment Loop
+
+### Change
+
+Implemented the card-code sales loop on top of the product and fulfillment foundation.
+
+### Scope
+
+- Added `CardCodeCipher` for AES-256-GCM encryption of card-code plaintext.
+- Added `CardCodeService` for card-code import, duplicate fingerprinting, stock counts, reservation, delivery, release, and owner-only decryption.
+- Added **TypechoPay → 商品与卡密** admin panel for creating products, importing card-code batches, checking inventory, and copying product shortcodes.
+- Added `cardcode` fulfillment support in `FulfillmentManager`.
+- Reserved card-code stock before creating the upstream payment session.
+- Delivered the reserved card code after verified payment success and recorded `pay_fulfillments.card_item_id`.
+- Released reserved but undelivered card stock when local creation fails or providers return terminal failed/cancelled/expired/closed states.
+- Added `/action/typechopay?do=delivery` to let the order owner or poll-token holder view delivered card codes.
+- Kept public order polling free of plaintext card data; it only exposes `has_card_delivery`.
+
+### Boundary
+
+This commit does not yet implement low-stock email, refund-driven `compromised` marking, manual void/reissue workflows, or a dedicated customer order center. Those should be handled in the next product-management pass.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-26 Product/Fulfillment Foundation
 
 ### Change
@@ -23,7 +55,7 @@ Added the v0.3 product and fulfillment foundation so paid-reading can evolve tow
 
 ### Boundary
 
-Card-code tables are present for the next phase, but `CardCodeHandler`, admin import, atomic reservation, stock release, low-stock notifications, and refund/revoke behavior are not implemented in this commit.
+Card-code fulfillment is completed in the next entry below. This foundation commit still did not include low-stock notifications, refund/revoke behavior, or manual void/reissue operations.
 
 ### Verification
 

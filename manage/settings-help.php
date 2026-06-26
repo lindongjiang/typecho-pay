@@ -182,6 +182,7 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
             <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product="article-123-premium" gateways="paypay,alipay"]</code></pre>
             <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product_id="18" gateways="alipay"]</code></pre>
             <p><strong>说明：</strong>商品价格、币种、购买策略和交付规则来自 <code>pay_products</code> / <code>pay_product_deliverables</code>。管理员改价后，旧缓存页面也会按服务端当前商品价格创建订单。</p>
+            <p><strong>卡密商品：</strong>请在左侧 <strong>TypechoPay → 商品与卡密</strong> 创建商品并导入库存。用户支付成功后会跳转到受订单凭证保护的卡密交付页。</p>
 
             <h4 style="margin-top:15px;">旧版金额支付按钮（兼容）</h4>
             <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay amount="500" currency="JPY" subject="商品名称" gateways="paypay"]</code></pre>
@@ -209,7 +210,10 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
             <h3>❓ 常见问题</h3>
 
             <h4 style="margin-top:15px;">Q: 支付成功但内容没有解锁？</h4>
-            <p>A: 请在后台"支付订单"页面找到对应订单，点击"重发权益"按钮。如果仍然失败，请检查 PHP 错误日志。</p>
+            <p>A: 请在后台"支付订单"页面找到对应订单，点击"重发交付"按钮。如果仍然失败，请检查 PHP 错误日志。</p>
+
+            <h4 style="margin-top:15px;">Q: 支付成功但卡密没有发出？</h4>
+            <p>A: 如果订单显示 <code>partial</code> 或 <code>failed</code>，请先在“商品与卡密”补充库存，再回到“支付订单”点击“重发交付”。重复回调或重复重发不会重复发同一张已交付卡密。</p>
 
             <h4 style="margin-top:15px;">Q: 微信支付回调一直失败？</h4>
             <p>A: 请检查：</p>

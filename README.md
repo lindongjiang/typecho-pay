@@ -5,12 +5,12 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 - 统一订单表 `pay_orders` 和通知事件表 `pay_events`
 - 付费权益表 `pay_entitlements`
 - 商品表 `pay_products`、商品交付规则表 `pay_product_deliverables`、订单交付记录表 `pay_fulfillments`
-- 卡密批次表 `pay_card_batches` 和卡密库存表 `pay_card_items`（库存表已准备，卡密发放处理器尚未接入）
+- 卡密批次表 `pay_card_batches` 和卡密库存表 `pay_card_items`
 - 一次性入口 nonce 表 `pay_nonces`
 - `/action/typechopay` 统一创建、通知、查询、返回入口
 - PayPay Dynamic QR 直接 HMAC 客户端
 - 微信支付 Native、支付宝 Page/Precreate 的 SDK 接入层和主动查单
-- 后台订单列表和权益重发入口
+- 后台订单列表、商品与卡密管理、权益/交付重发入口
 - 商品短代码支付入口、旧金额短代码兼容层和入口防篡改签名
 - 最小付费阅读隐藏内容块
 
@@ -29,7 +29,8 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 
 启用插件后，左侧菜单会出现 **TypechoPay** 菜单，包含：
 
-- **支付订单**：查看所有订单，支持按订单号筛选，可对已支付订单重发权益
+- **支付订单**：查看所有订单，支持按订单号筛选，可对已支付订单重发交付
+- **商品与卡密**：创建服务端商品、导入卡密库存、查看可用/预留/已发库存
 - **支付设置说明**：查看回调地址、各网关配置指南、短代码使用说明和常见问题
 
 插件配置在 **后台 → 控制台 → 插件 → TypechoPay → 设置** 中填写，包含：
@@ -87,13 +88,31 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 
 - `post_access`：写入 `pay_entitlements`，解锁整篇文章
 - `content_block`：写入 `pay_entitlements`，用于后续稳定内容块权限
+- `cardcode`：创建订单前预留一张卡密，支付成功后交付，订单失败/过期/关闭时释放未交付预留
 
 订单保留旧 `status` 字段，同时新增：
 
 - `payment_status`：支付侧状态，如 `pending`、`processing`、`paid`、`failed`、`expired`
 - `fulfillment_status`：交付侧状态，如 `none`、`pending`、`fulfilled`、`partial`、`failed`
 
-`pay_fulfillments` 按 `(order_id, deliverable_id)` 去重，重复回调不会重复交付。卡密相关表已按“预留、交付、过期释放、退款标记 compromised”的方向预留，但 `CardCodeHandler`、后台导入和库存锁将在后续版本实现。
+`pay_fulfillments` 按 `(order_id, deliverable_id)` 去重，重复回调不会重复交付。卡密正文使用 OpenSSL AES-256-GCM 加密保存，库存表只额外保存基于站点密钥的 HMAC 去重指纹，不把明文写入订单表、事件表或日志。
+
+## 卡密闭环
+
+后台路径：**TypechoPay → 商品与卡密**。
+
+1. 创建商品，勾选“交付卡密”。卡密商品建议使用 `repeatable` 购买策略。
+2. 在“导入卡密”中选择商品，按行导入库存。支持 `卡号----卡密`、`卡号|卡密`、`卡号,卡密` 或单独兑换码。
+3. 在文章中使用后台生成的短代码：
+
+```text
+[typechopay product="recharge-card-100"]
+```
+
+4. 用户点击支付时，系统会先从 `available` 库存中条件更新预留一张卡密为 `reserved`，预留 30 分钟。
+5. 支付成功后，`FulfillmentManager` 把同一张预留卡密标记为 `delivered`，并写入 `pay_fulfillments.card_item_id`。
+6. 用户支付页轮询到成功后会跳转到 `/action/typechopay?do=delivery...` 查看卡密。该页面必须携带订单 `poll_token`，或匹配当前登录用户/访客 token。
+7. 如果支付创建失败、支付平台返回失败/取消/过期/关闭，未交付的 `reserved` 库存会释放回 `available`。如果支付成功时预留已过期，系统会再尝试原子分配一张可用卡密；没有库存时交付失败，后台可补库存后重发。
 
 ## 网关状态
 
@@ -151,10 +170,12 @@ PayPay：
 - 订单查询必须提供创建订单时生成的 `poll_token`，或匹配当前登录用户/访客 token；查询响应不会返回 `return_to`。
 - 文章支付按钮点击后先走 `/action/typechopay?do=prepare` 动态准备入口，再创建订单，避免缓存页面复用一次性 nonce。
 - 每次通知或实际主动查单都会写入 `pay_events`，便于审计；事件表保留 provider event id/type、平台交易号、IP、请求头和 payload。
-- 订单更新是状态机控制的：只有 `pending` / `processing` 可以进入 `paid_pending_grant`；权益发放成功后才进入 `paid`，失败会进入 `grant_failed`，后台可重发权益。
+- 订单更新是状态机控制的：只有 `pending` / `processing` 可以进入 `paid_pending_grant`；交付成功后才进入 `paid`，失败会进入 `grant_failed`，后台可重发交付。
 - 支付和交付状态已分离：第三方支付成功会先写 `payment_status=paid`，交付成功后才写 `fulfillment_status=fulfilled`；交付失败不会抹掉“用户已付款”的事实。
 - 支付平台返回 `expired`、`cancelled`、`failed`、`closed`、`revoked`、`trade_closed` 等终态时会同步到本地订单并停止前端轮询。
 - 支付成功页不会重载创建订单的 POST 页面，而是跳回签名保护的 `return_to`。
+- 卡密查看页必须通过订单 poll token 或订单所有者校验；公开查询接口只返回 `has_card_delivery`，不会返回明文卡密。
+- 卡密正文使用 Typecho 站点密钥派生出的 AES-256-GCM 密钥加密保存；导入后后台只显示库存统计，不回显明文。不要随意更换站点密钥，否则历史卡密无法解密。
 - 访客权益 Cookie 以 HttpOnly、SameSite=Lax 写入；访客购买后登录会认领同一 guest token 下的订单和权益。
 - 业务请求不再尝试执行 `ALTER TABLE`，schema 变更只在插件启用/升级迁移时执行。
 

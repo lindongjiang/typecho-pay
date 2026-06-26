@@ -51,7 +51,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.2.0
+ * @version 0.3.0
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -59,6 +59,7 @@ class Plugin implements PluginInterface
     private const ACTION = 'typechopay';
     private const MENU = 'TypechoPay';
     private const ORDERS_PANEL = 'TypechoPay/manage/orders.php';
+    private const PRODUCTS_PANEL = 'TypechoPay/manage/products.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
     private const SCHEMA_VERSION = 4;
 
@@ -72,6 +73,7 @@ class Plugin implements PluginInterface
         Helper::addAction(self::ACTION, '\\' . __NAMESPACE__ . '\\Action');
         $menuIndex = Helper::addMenu(self::MENU);
         Helper::addPanel($menuIndex, self::ORDERS_PANEL, _t('支付订单'), _t('TypechoPay'), 'administrator');
+        Helper::addPanel($menuIndex, self::PRODUCTS_PANEL, _t('商品与卡密'), _t('TypechoPay'), 'administrator');
         Helper::addPanel($menuIndex, self::SETTINGS_HELP_PANEL, _t('支付设置说明'), _t('TypechoPay'), 'administrator');
 
         \Typecho\Plugin::factory('Widget\Base\Contents')->contentEx = __CLASS__ . '::renderPayShortcodes';
@@ -87,6 +89,7 @@ class Plugin implements PluginInterface
         Helper::removeAction(self::ACTION);
         $menuIndex = Helper::removeMenu(self::MENU);
         Helper::removePanel($menuIndex, self::ORDERS_PANEL);
+        Helper::removePanel($menuIndex, self::PRODUCTS_PANEL);
         Helper::removePanel($menuIndex, self::SETTINGS_HELP_PANEL);
 
         return _t('TypechoPay 已禁用，订单表会保留以便审计和恢复。');
