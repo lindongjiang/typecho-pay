@@ -2,6 +2,36 @@
 
 Date: 2026-06-25
 
+## 2026-06-26 Payment Lifecycle P0 Follow-Up
+
+### Change
+
+Hardened the v0.3 sandbox payment lifecycle around active-order reuse, return/delivery tokens, rate limiting, and callback acknowledgement.
+
+### Scope
+
+- Fixed active-order reuse so reusable local payment entries do not recreate upstream payment sessions with the same `out_trade_no`.
+- Restricted reuse to non-expired orders with matching product version, amount, currency, gateway, and buyer.
+- Preserved existing return tokens during reuse and added atomic `consumeReturnToken()` with `return_token_expires_at`.
+- Rotated delivery tokens after return-token consumption and moved generated delivery access to HttpOnly cookies plus clean 303 delivery redirects.
+- Fixed IP rate limiting to use 64-character nonce hashes and Typecho query-builder counts instead of `Db::quoteValue()`.
+- Split payment confirmation from fulfillment so verified paid callbacks are acknowledged even when local entitlement/card delivery fails.
+- Bumped schema version to `6` for the new return-token expiry column.
+
+### Boundary
+
+This change hardens lifecycle correctness but still does not implement refunds, low-stock notification, or manual card void/reissue workflows.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-26 Card-Code Fulfillment Loop
 
 ### Change

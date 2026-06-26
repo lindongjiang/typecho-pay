@@ -111,7 +111,7 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 
 4. 用户点击支付时，系统会先从 `available` 库存中条件更新预留一张卡密为 `reserved`，预留 30 分钟。
 5. 支付成功后，`FulfillmentManager` 把同一张预留卡密标记为 `delivered`，并写入 `pay_fulfillments.card_item_id`。
-6. 用户支付页轮询到成功后会跳转到 `/action/typechopay?do=delivery...` 查看卡密。该页面必须携带订单 `poll_token`，或匹配当前登录用户/访客 token。
+6. 用户支付页轮询到成功后会跳转到 `/action/typechopay?do=delivery...` 查看卡密。卡密访问通过 HttpOnly delivery cookie、兼容的 delivery token 或当前订单所有者校验完成。
 7. 如果支付创建失败、支付平台返回失败/取消/过期/关闭，未交付的 `reserved` 库存会释放回 `available`。如果支付成功时预留已过期，系统会再尝试原子分配一张可用卡密；没有库存时交付失败，后台可补库存后重发。
 
 ## 网关状态
@@ -169,12 +169,13 @@ PayPay：
 - 前端可以 3 秒轮询本地订单状态，服务端会把远程主动查单节流到约 8 秒一次。
 - 订单查询必须提供创建订单时生成的 `poll_token`，或匹配当前登录用户/访客 token；查询响应不会返回 `return_to`。
 - 文章支付按钮点击后先走 `/action/typechopay?do=prepare` 动态准备入口，再创建订单，避免缓存页面复用一次性 nonce。
+- 同一买家、同一商品版本、同一金额/币种/网关的未过期活动订单会复用已有支付入口，不会再次用同一个 `out_trade_no` 调支付平台创建接口。
 - 每次通知或实际主动查单都会写入 `pay_events`，便于审计；事件表保留 provider event id/type、平台交易号、IP、请求头和 payload。
 - 订单更新是状态机控制的：只有 `pending` / `processing` 可以进入 `paid_pending_grant`；交付成功后才进入 `paid`，失败会进入 `grant_failed`，后台可重发交付。
-- 支付和交付状态已分离：第三方支付成功会先写 `payment_status=paid`，交付成功后才写 `fulfillment_status=fulfilled`；交付失败不会抹掉“用户已付款”的事实。
+- 支付和交付状态已分离：第三方支付成功会先写 `payment_status=paid` 并向支付平台 ACK；交付成功后才写 `fulfillment_status=fulfilled`。交付失败不会抹掉“用户已付款”的事实，也不会让支付平台重复回调。
 - 支付平台返回 `expired`、`cancelled`、`failed`、`closed`、`revoked`、`trade_closed` 等终态时会同步到本地订单并停止前端轮询。
-- 支付成功页不会重载创建订单的 POST 页面，而是跳回签名保护的 `return_to`。
-- 卡密查看页必须通过订单 poll token 或订单所有者校验；公开查询接口只返回 `has_card_delivery`，不会返回明文卡密。
+- 支付平台回跳必须携带一次性 `return_token`；服务端原子消费后签发新的 HttpOnly delivery cookie，再 303 跳转到不含 token 的卡密交付地址。
+- 卡密查看页必须通过 delivery cookie、兼容的 delivery token 或订单所有者校验；公开查询接口只返回 `has_card_delivery`，不会返回明文卡密。
 - 卡密正文使用 Typecho 站点密钥派生出的 AES-256-GCM 密钥加密保存；导入后后台只显示库存统计，不回显明文。不要随意更换站点密钥，否则历史卡密无法解密。
 - 访客权益 Cookie 以 HttpOnly、SameSite=Lax 写入；访客购买后登录会认领同一 guest token 下的订单和权益。
 - 业务请求不再尝试执行 `ALTER TABLE`，schema 变更只在插件启用/升级迁移时执行。

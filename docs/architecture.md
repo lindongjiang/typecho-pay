@@ -23,15 +23,15 @@ flowchart LR
   A["文章短代码 product/product_id"] --> B["HMAC 签名商品入口"]
   B --> C["/action/typechopay?do=prepare"]
   C --> D["ProductService 读取当前商品"]
-  D --> E["pay_orders pending + product snapshot + poll_token_hash"]
-  E --> F["FulfillmentManager reserve"]
+  D --> E["pay_orders pending + product snapshot + token hashes"]
+  E --> F["reuse active order or reserve"]
   F --> G["cardcode: available -> reserved"]
-  F --> H["Gateway create"]
+  F --> H["Gateway create when not reused"]
   H --> I["用户支付"]
   I --> J["/action/typechopay?do=notify"]
   J --> K["验签/解密/金额校验"]
   K --> L["pay_events"]
-  K --> M["payment_status=paid"]
+  K --> M["payment_status=paid + ACK provider"]
   M --> N["FulfillmentManager fulfill"]
   N --> O["pay_fulfillments"]
   N --> P["pay_entitlements"]
@@ -41,13 +41,13 @@ flowchart LR
 
 ## 关键表
 
-`pay_orders` 是订单事实表。`out_trade_no` 是商户侧唯一订单号，支付平台交易号只写入 `platform_trade_no`。`poll_token_hash` 保存订单查询凭证哈希，前端轮询必须携带原始 token 或匹配当前登录/访客所有者。`return_to` 保存支付完成后的同站跳转地址，`last_queried_at` 和 `query_count` 用于服务端主动查单节流。订单同时保留 `payment_status` 和 `fulfillment_status`，并保存 `product_id`、`product_version`、`product_snapshot_json` 用于审计创建订单时的商品状态。
+`pay_orders` 是订单事实表。`out_trade_no` 是商户侧唯一订单号，支付平台交易号只写入 `platform_trade_no`。`poll_token_hash` 保存订单查询凭证哈希，前端轮询必须携带原始 token 或匹配当前登录/访客所有者。`return_token_hash` 和 `return_token_expires_at` 用于支付平台回跳的一次性原子消费，消费后会轮换 `delivery_token_hash` 并写入 HttpOnly cookie。`return_to` 保存支付完成后的同站跳转地址，`last_queried_at` 和 `query_count` 用于服务端主动查单节流。订单同时保留 `payment_status` 和 `fulfillment_status`，并保存 `product_id`、`product_version`、`product_snapshot_json` 用于审计创建订单时的商品状态。
 
 `pay_events` 是通知/主动查单事件表。即使通知失败，也保留事件类型、签名结果、provider event id/type、平台交易号、远端 IP、请求头和 payload 摘要，方便排查支付平台重试。
 
 `pay_products` 保存当前商品价格、币种、购买策略和库存策略。`pay_product_deliverables` 保存商品的交付规则，例如 `post_access`、`content_block`、`cardcode`，后续可扩展 `membership`、`download`。
 
-`pay_fulfillments` 是订单交付记录表，以 `(order_id, deliverable_id)` 去重。重复支付回调会复用已有交付结果，不会重复发放同一个交付项。
+`pay_fulfillments` 是订单交付记录表，以 `(order_id, deliverable_id)` 去重。重复支付回调会复用已有交付结果，不会重复发放同一个交付项。支付回调只要支付事实验签和金额校验通过，就会先确认 `payment_status=paid` 并 ACK 支付平台；本地交付失败只落到 `fulfillment_status=failed` / `grant_failed`，由后台重试。
 
 `pay_entitlements` 是最小权益表。订单确认支付后先进入 `paid_pending_grant`，由 `FulfillmentManager` 调用对应 handler 写入权益或卡密交付；写入成功后订单 `status=paid` 且 `fulfillment_status=fulfilled`，失败时保留 `payment_status=paid` 并进入 `grant_failed` / `fulfillment_status=failed`，后台可重发交付。
 
@@ -66,6 +66,8 @@ flowchart LR
 网关只负责和支付平台通信、验签、把平台状态转换成统一结果。订单写入和状态流转只在 `OrderService` 中完成。
 
 主动查单由 `/action/typechopay?do=query` 触发，但请求必须携带订单轮询 token 或匹配当前订单所有者。`OrderService` 会根据 `last_queried_at` 做服务端节流，避免前端轮询直接等价为支付平台轮询。
+
+活动订单复用只允许同一买家、同一商品、同一商品版本、同一金额/币种/网关且未过期的 `pending` / `processing` 订单。已有 `pay_url` 或 `qr_content` 时直接复用本地支付入口，不再用同一个 `out_trade_no` 调支付平台创建接口。
 
 ## 交付契约
 

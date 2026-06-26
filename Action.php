@@ -4,6 +4,7 @@ namespace TypechoPlugin\TypechoPay;
 
 use Typecho\Db;
 use Typecho\Common;
+use TypechoPlugin\TypechoPay\Contracts\PayCreateResult;
 use TypechoPlugin\TypechoPay\Gateways\GatewayFactory;
 use TypechoPlugin\TypechoPay\Services\CardCodeService;
 use TypechoPlugin\TypechoPay\Services\FulfillmentManager;
@@ -153,6 +154,16 @@ class Action extends BaseOptions implements ActionInterface
 
         $order = $orderService->create($orderInput + ['gateway' => $gateway], $userId, $guestTokenHash);
 
+        if (!empty($order['skip_gateway_create'])) {
+            if (!empty($order['pay_url']) || !empty($order['qr_content'])) {
+                $this->renderPayment($order, $this->payCreateResultFromOrder($order));
+                return;
+            }
+
+            $this->renderCreateInProgress($order);
+            return;
+        }
+
         try {
             (new FulfillmentManager(Db::get()))->reserveOrder($order);
             $adapter = GatewayFactory::make($gateway, $config, $this->options);
@@ -213,8 +224,13 @@ class Action extends BaseOptions implements ActionInterface
                 'headers' => $headers,
             ]);
 
-            if ($result->isPaid()) {
-                $orderService->markPaid($result);
+            if ($result->isPaid() && $result->signatureOk) {
+                $order = $orderService->confirmPayment($result);
+                try {
+                    $orderService->fulfillPaidOrder($order);
+                } catch (\Throwable $e) {
+                    error_log('[TypechoPay] Fulfillment after notify failed: ' . $e->getMessage());
+                }
             } else {
                 $orderService->syncProviderStatus($result);
             }
@@ -260,12 +276,18 @@ class Action extends BaseOptions implements ActionInterface
         $orderService = new OrderService(Db::get());
         $order = $orderService->findByOutTradeNo($outTradeNo);
 
-        // Verify the one-time return_token (sent back by the payment platform).
-        // This token is consumed on first use and never reused.
         $returnToken = (string) $this->request->get('return_token');
-        if (!$order || !$orderService->verifyReturnToken($order, $returnToken)) {
-            // Fallback: allow owner access (logged-in user or guest cookie).
-            if (!$order || !$this->canReadOrder($orderService, $order, '')) {
+        $returnTokenConsumed = $order ? $orderService->consumeReturnToken($outTradeNo, $returnToken) : false;
+        $deliveryToken = '';
+        if ($returnTokenConsumed) {
+            $deliveryToken = bin2hex(random_bytes(32));
+            if ($orderService->rotateDeliveryToken($outTradeNo, $deliveryToken)) {
+                $this->setDeliveryCookie($outTradeNo, $deliveryToken);
+            }
+        }
+
+        if (!$returnTokenConsumed) {
+            if (!$order || (!$this->canReadOrder($orderService, $order, '') && !$this->hasDeliveryCookieAccess($orderService, $order))) {
                 $this->response->setStatus(403);
                 $this->response->throwContent(
                     '<!doctype html><meta charset="utf-8"><title>Payment Return</title><p>订单访问凭证无效。</p>',
@@ -273,11 +295,9 @@ class Action extends BaseOptions implements ActionInterface
                 );
                 return;
             }
-        } else {
-            // Mark the return token as used (one-time).
-            $orderService->markReturnTokenUsed($outTradeNo);
         }
 
+        $order = $orderService->findByOutTradeNo($outTradeNo) ?: $order;
         if (in_array($order['status'], ['pending', 'processing'], true)) {
             try {
                 $order = $this->activeQuery($orderService, $order, $config, false);
@@ -291,12 +311,11 @@ class Action extends BaseOptions implements ActionInterface
 
         if ($order['status'] === 'paid'
             && (new FulfillmentManager(Db::get()))->orderHasHandler($order, 'cardcode')) {
-            // Set an HttpOnly cookie so the user can revisit the delivery page later.
-            $deliveryToken = (string) ($order['delivery_token'] ?? '');
-            if ($deliveryToken !== '') {
-                $this->setDeliveryCookie($outTradeNo, $deliveryToken);
-            }
-            $this->renderDeliveryPage($order, $deliveryToken, $returnTo);
+            $deliveryUrl = Common::url(
+                '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode($outTradeNo),
+                $this->options->index
+            );
+            $this->redirectSeeOther($deliveryUrl);
             return;
         }
 
@@ -395,10 +414,12 @@ class Action extends BaseOptions implements ActionInterface
             . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
             $this->options->index
         );
-        // delivery_token is used for revisiting the card delivery page.
+        if (!empty($order['delivery_token'])) {
+            $this->setDeliveryCookie((string) $order['out_trade_no'], (string) $order['delivery_token']);
+        }
+
         $deliveryUrl = Common::url(
-            '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode($order['out_trade_no'])
-            . '&delivery_token=' . rawurlencode((string) ($order['delivery_token'] ?? '')),
+            '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode($order['out_trade_no']),
             $this->options->index
         );
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? ''));
@@ -434,6 +455,26 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $html .= '</main></body></html>';
+        $this->response->throwContent($html, 'text/html');
+    }
+
+    private function renderCreateInProgress(array $order): void
+    {
+        $this->setNoStoreHeaders();
+        $pollUrl = Common::url(
+            '/action/typechopay?do=query&out_trade_no=' . rawurlencode((string) $order['out_trade_no'])
+            . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
+            $this->options->index
+        );
+        $html = '<!doctype html><html><head><meta charset="utf-8"><title>支付订单创建中</title>'
+            . '<meta name="robots" content="noindex, nofollow">'
+            . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}.box{max-width:640px}</style>'
+            . '</head><body><main class="box">'
+            . '<h1>支付订单创建中</h1>'
+            . '<p>订单号：' . htmlspecialchars((string) $order['out_trade_no']) . '</p>'
+            . '<p id="typechopay-status">支付平台订单正在创建或确认中，请稍后刷新。</p>'
+            . '<p><a href="' . htmlspecialchars($pollUrl) . '">查看订单状态</a></p>'
+            . '</main></body></html>';
         $this->response->throwContent($html, 'text/html');
     }
 
@@ -476,8 +517,7 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $deliveryUrl = Common::url(
-            '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode((string) $order['out_trade_no'])
-            . ($deliveryToken !== '' ? '&delivery_token=' . rawurlencode($deliveryToken) : ''),
+            '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode((string) $order['out_trade_no']),
             $this->options->index
         );
         $html .= '<p><a href="' . htmlspecialchars($deliveryUrl) . '">刷新交付状态</a></p>';
@@ -539,7 +579,13 @@ class Action extends BaseOptions implements ActionInterface
         ]);
 
         if ($result->isPaid()) {
-            return $orderService->markPaid($result);
+            $confirmed = $orderService->confirmPayment($result);
+            try {
+                return $orderService->fulfillPaidOrder($confirmed);
+            } catch (\Throwable $e) {
+                error_log('[TypechoPay] Fulfillment after active query failed: ' . $e->getMessage());
+                return $orderService->findByOutTradeNo($confirmed['out_trade_no']) ?: $confirmed;
+            }
         }
 
         $synced = $orderService->syncProviderStatus($result);
@@ -639,6 +685,33 @@ class Action extends BaseOptions implements ActionInterface
         $this->response->setHeader('X-Robots-Tag', 'noindex, nofollow');
         $this->response->setHeader('X-Frame-Options', 'DENY');
         $this->response->setHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    private function payCreateResultFromOrder(array $order): PayCreateResult
+    {
+        $payUrl = isset($order['pay_url']) ? (string) $order['pay_url'] : '';
+        $qrContent = isset($order['qr_content']) ? (string) $order['qr_content'] : '';
+        return new PayCreateResult(
+            $qrContent !== '' ? 'qr' : 'redirect',
+            $payUrl !== '' ? $payUrl : null,
+            $qrContent !== '' ? $qrContent : ($payUrl !== '' ? $payUrl : null),
+            null,
+            ['reused' => true]
+        );
+    }
+
+    private function hasDeliveryCookieAccess(OrderService $orderService, array $order): bool
+    {
+        $outTradeNo = (string) ($order['out_trade_no'] ?? '');
+        $cookieToken = $outTradeNo !== '' ? $this->getDeliveryCookieToken($outTradeNo) : '';
+        return $cookieToken !== '' && $orderService->verifyDeliveryToken($order, $cookieToken);
+    }
+
+    private function redirectSeeOther(string $location): void
+    {
+        $this->response->setStatus(303);
+        $this->response->setHeader('Location', $location);
+        $this->response->throwContent('', 'text/html');
     }
 
     /**

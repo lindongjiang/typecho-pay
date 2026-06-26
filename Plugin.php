@@ -52,7 +52,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.3.0
+ * @version 0.3.1
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -62,7 +62,7 @@ class Plugin implements PluginInterface
     private const ORDERS_PANEL = 'TypechoPay/manage/orders.php';
     private const PRODUCTS_PANEL = 'TypechoPay/manage/products.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
-    private const SCHEMA_VERSION = 5;
+    private const SCHEMA_VERSION = 6;
 
     /**
      * 启用插件。
@@ -475,6 +475,9 @@ class Plugin implements PluginInterface
             $db->fetchRow(
                 $db->select('payment_status')->from('table.pay_orders')->limit(1)
             );
+            $db->fetchRow(
+                $db->select('return_token_expires_at')->from('table.pay_orders')->limit(1)
+            );
             // Check that pay_card_items table is accessible.
             $db->fetchRow(
                 $db->select('status')->from('table.pay_card_items')->limit(1)
@@ -531,6 +534,7 @@ class Plugin implements PluginInterface
                 `fulfillment_status` VARCHAR(32) NOT NULL DEFAULT 'none',
                 `poll_token_hash` VARCHAR(128) DEFAULT NULL,
                 `return_token_hash` VARCHAR(128) DEFAULT NULL,
+                `return_token_expires_at` DATETIME DEFAULT NULL,
                 `delivery_token_hash` VARCHAR(128) DEFAULT NULL,
                 `return_token_used` TINYINT(1) NOT NULL DEFAULT 0,
                 `platform_trade_no` VARCHAR(128) DEFAULT NULL,
@@ -711,6 +715,7 @@ class Plugin implements PluginInterface
                 fulfillment_status TEXT NOT NULL DEFAULT 'none',
                 poll_token_hash TEXT DEFAULT NULL,
                 return_token_hash TEXT DEFAULT NULL,
+                return_token_expires_at TEXT DEFAULT NULL,
                 delivery_token_hash TEXT DEFAULT NULL,
                 return_token_used INTEGER NOT NULL DEFAULT 0,
                 platform_trade_no TEXT DEFAULT NULL,
@@ -879,6 +884,7 @@ class Plugin implements PluginInterface
                 fulfillment_status VARCHAR(32) NOT NULL DEFAULT 'none',
                 poll_token_hash VARCHAR(128) DEFAULT NULL,
                 return_token_hash VARCHAR(128) DEFAULT NULL,
+                return_token_expires_at TIMESTAMP DEFAULT NULL,
                 delivery_token_hash VARCHAR(128) DEFAULT NULL,
                 return_token_used SMALLINT NOT NULL DEFAULT 0,
                 platform_trade_no VARCHAR(128) DEFAULT NULL,
@@ -1047,6 +1053,8 @@ class Plugin implements PluginInterface
         ];
         // v5 columns: token separation
         $orderColumns[] = "return_token_hash {$string128} DEFAULT NULL";
+        // v6 column: return token expiry.
+        $orderColumns[] = "return_token_expires_at {$dateType} DEFAULT NULL";
         $orderColumns[] = "delivery_token_hash {$string128} DEFAULT NULL";
         $orderColumns[] = "return_token_used {$boolDefault}";
 

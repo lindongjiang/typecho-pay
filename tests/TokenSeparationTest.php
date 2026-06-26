@@ -90,11 +90,14 @@ tt_assert(strpos($createMethod, 'return_token') !== false, 'AlipayGateway::creat
 $orderServiceSource = file_get_contents($root . '/src/Services/OrderService.php');
 tt_assert(strpos($orderServiceSource, 'function verifyPollToken') !== false, 'OrderService has verifyPollToken');
 tt_assert(strpos($orderServiceSource, 'function verifyReturnToken') !== false, 'OrderService has verifyReturnToken');
+tt_assert(strpos($orderServiceSource, 'function consumeReturnToken') !== false, 'OrderService has atomic consumeReturnToken');
 tt_assert(strpos($orderServiceSource, 'function verifyDeliveryToken') !== false, 'OrderService has verifyDeliveryToken');
-tt_assert(strpos($orderServiceSource, 'function markReturnTokenUsed') !== false, 'OrderService has markReturnTokenUsed');
+tt_assert(strpos($orderServiceSource, 'function rotateDeliveryToken') !== false, 'OrderService can rotate delivery tokens');
 
 // ---- Test 10: return_token is one-time ----
 tt_assert(strpos($orderServiceSource, 'return_token_used') !== false, 'OrderService tracks return_token_used');
+tt_assert(strpos($orderServiceSource, 'return_token_expires_at > ?') !== false, 'Return token consumption checks expiry');
+tt_assert(strpos($orderServiceSource, 'return_token_hash = ?') !== false, 'Return token consumption checks token hash atomically');
 
 // ---- Test 11: Action.php sets security headers ----
 $actionSource = file_get_contents($root . '/Action.php');
@@ -109,6 +112,10 @@ tt_assert(strpos($actionSource, 'httponly') !== false || strpos($actionSource, '
 
 // ---- Test 13: delivery() checks delivery_token ----
 tt_assert(strpos($actionSource, 'verifyDeliveryToken') !== false, 'Action::delivery() verifies delivery_token');
+tt_assert(strpos($actionSource, 'consumeReturnToken') !== false, 'Payment return atomically consumes return_token');
+tt_assert(strpos($actionSource, 'rotateDeliveryToken') !== false, 'Payment return rotates delivery_token');
+tt_assert(strpos($actionSource, 'redirectSeeOther') !== false, 'Payment return redirects to clean delivery URL with 303');
+tt_assert(strpos($actionSource, "do=delivery&out_trade_no=' . rawurlencode((string) \$order['out_trade_no'])\n            . (\$deliveryToken") === false, 'Delivery refresh URL does not include delivery_token');
 
 // ---- Summary ----
 echo "\n\n--- TokenSeparationTest ---\n";

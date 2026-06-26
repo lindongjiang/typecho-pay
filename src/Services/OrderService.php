@@ -18,6 +18,7 @@ final class OrderService
     private const ACTIVE_QUERY_INTERVAL = 8;
     private const RATE_LIMIT_WINDOW = 60;
     private const RATE_LIMIT_MAX_PREPARES = 10;
+    private const ORDER_TTL = 1800;
     private const FINAL_PROVIDER_STATUSES = [
         'expired' => 'expired',
         'cancelled' => 'cancelled',
@@ -46,20 +47,9 @@ final class OrderService
         $gateway = (string) ($input['gateway'] ?? '');
 
         if ($productId !== null && $productId > 0 && $gateway !== '') {
-            $existing = $this->findActiveOrderForBuyer($userId, $guestTokenHash, $productId, $gateway);
+            $existing = $this->findActiveOrderForBuyer($userId, $guestTokenHash, $input, $gateway);
             if ($existing) {
-                $existing['poll_token'] = $this->makePollToken();
-                $this->db->query($this->db->update('table.pay_orders')->rows([
-                    'poll_token_hash' => hash('sha256', $existing['poll_token']),
-                    'return_token_hash' => null,
-                    'delivery_token_hash' => null,
-                    'return_token_used' => 0,
-                    'expired_at' => date('Y-m-d H:i:s', time() + 1800),
-                    'updated_at' => date('Y-m-d H:i:s'),
-                ])->where('id = ?', (int) $existing['id']));
-                $existing['return_token'] = null;
-                $existing['delivery_token'] = null;
-                return $existing;
+                return $this->prepareReusableOrder($existing);
             }
         }
 
@@ -75,14 +65,15 @@ final class OrderService
             return;
         }
 
+        $this->cleanupRateLimits();
         $scope = 'prepare:' . $ip;
-        $hash = hash('sha256', $scope);
         $now = date('Y-m-d H:i:s');
         $expires = date('Y-m-d H:i:s', time() + self::RATE_LIMIT_WINDOW);
+        $nonceHash = hash('sha256', $scope . ':' . bin2hex(random_bytes(16)));
 
         try {
             $this->db->query($this->db->insert('table.pay_nonces')->rows([
-                'nonce_hash' => $hash . ':' . bin2hex(random_bytes(4)),
+                'nonce_hash' => $nonceHash,
                 'scope' => $scope,
                 'expires_at' => $expires,
                 'created_at' => $now,
@@ -92,11 +83,12 @@ final class OrderService
         }
 
         $cutoff = date('Y-m-d H:i:s', time() - self::RATE_LIMIT_WINDOW);
-        $table = $this->quotedTable('pay_nonces');
         $count = 0;
         try {
             $row = $this->db->fetchRow(
-                "SELECT COUNT(*) AS cnt FROM {$table} WHERE scope = '" . $this->db->quoteValue($scope) . "' AND created_at >= '" . $this->db->quoteValue($cutoff) . "'"
+                $this->db->select('COUNT(*) AS cnt')->from('table.pay_nonces')
+                    ->where('scope = ?', $scope)
+                    ->where('created_at >= ?', $cutoff)
             );
             $count = (int) ($row['cnt'] ?? 0);
         } catch (\Throwable $e) {
@@ -121,9 +113,14 @@ final class OrderService
         }
     }
 
-    public function findActiveOrderForBuyer(?int $userId, ?string $guestTokenHash, int $productId, string $gateway): ?array
+    public function findActiveOrderForBuyer(?int $userId, ?string $guestTokenHash, array $input, string $gateway): ?array
     {
         if ($userId === null && ($guestTokenHash === null || $guestTokenHash === '')) {
+            return null;
+        }
+
+        $productId = isset($input['product_id']) ? (int) $input['product_id'] : 0;
+        if ($productId <= 0) {
             return null;
         }
 
@@ -131,6 +128,10 @@ final class OrderService
             ->where('product_id = ?', $productId)
             ->where('gateway = ?', $gateway)
             ->where('status IN ?', self::PAYABLE_STATUSES)
+            ->where('expired_at > ?', date('Y-m-d H:i:s'))
+            ->where('amount = ?', Money::assertAmount($input['amount'] ?? 0))
+            ->where('currency = ?', Money::assertCurrency($input['currency'] ?? 'CNY'))
+            ->where('product_version = ?', isset($input['product_version']) ? (int) $input['product_version'] : 0)
             ->order('id', Db::SORT_DESC)
             ->limit(1);
 
@@ -142,6 +143,36 @@ final class OrderService
         }
 
         return $this->db->fetchRow($select) ?: null;
+    }
+
+    private function prepareReusableOrder(array $existing): array
+    {
+        $pollToken = $this->makeToken();
+        $hasReusablePaymentEntry = !empty($existing['pay_url']) || !empty($existing['qr_content']);
+        $rows = [
+            'poll_token_hash' => hash('sha256', $pollToken),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+
+        if ($hasReusablePaymentEntry) {
+            $deliveryToken = $this->makeToken();
+            $rows['delivery_token_hash'] = hash('sha256', $deliveryToken);
+            $this->db->query($this->db->update('table.pay_orders')->rows($rows)->where('id = ?', (int) $existing['id']));
+            $existing['poll_token'] = $pollToken;
+            $existing['delivery_token'] = $deliveryToken;
+            $existing['reused'] = true;
+            $existing['skip_gateway_create'] = true;
+            return $existing;
+        }
+
+        $this->db->query($this->db->update('table.pay_orders')->rows($rows)->where('id = ?', (int) $existing['id']));
+        $existing['poll_token'] = $pollToken;
+        $existing['delivery_token'] = null;
+        $existing['return_token'] = null;
+        $existing['reused'] = true;
+        $existing['skip_gateway_create'] = true;
+        $existing['create_in_progress'] = true;
+        return $existing;
     }
 
     private function createFresh(array $input, ?int $userId, ?string $guestTokenHash): array
@@ -159,6 +190,7 @@ final class OrderService
         $pollToken = $this->makeToken();
         $returnToken = $this->makeToken();
         $deliveryToken = $this->makeToken();
+        $expiresAt = date('Y-m-d H:i:s', time() + self::ORDER_TTL);
 
         $order = [
             'out_trade_no' => $this->makeTradeNo(),
@@ -179,6 +211,7 @@ final class OrderService
             'fulfillment_status' => 'none',
             'poll_token_hash' => hash('sha256', $pollToken),
             'return_token_hash' => hash('sha256', $returnToken),
+            'return_token_expires_at' => $expiresAt,
             'delivery_token_hash' => hash('sha256', $deliveryToken),
             'return_token_used' => 0,
             'platform_trade_no' => null,
@@ -188,7 +221,7 @@ final class OrderService
             'last_queried_at' => null,
             'query_count' => 0,
             'paid_at' => null,
-            'expired_at' => date('Y-m-d H:i:s', time() + 1800),
+            'expired_at' => $expiresAt,
             'created_at' => $now,
             'updated_at' => $now,
         ];
@@ -227,6 +260,11 @@ final class OrderService
 
     public function markPaid(NotifyResult $result): array
     {
+        return $this->fulfillPaidOrder($this->confirmPayment($result));
+    }
+
+    public function confirmPayment(NotifyResult $result): array
+    {
         $order = $this->findByOutTradeNo($result->outTradeNo);
         if (!$order) {
             throw new \RuntimeException('Order not found.');
@@ -239,7 +277,7 @@ final class OrderService
         }
 
         if (in_array($order['status'], self::GRANTABLE_STATUSES, true)) {
-            return $this->grantPaidOrder($order);
+            return $order;
         }
 
         if (!in_array($order['status'], self::PAYABLE_STATUSES, true)) {
@@ -269,8 +307,17 @@ final class OrderService
             'paid_at' => $paidAt,
             'updated_at' => $paidAt,
         ]);
+        return $pendingOrder;
+    }
 
-        return $this->grantPaidOrder($pendingOrder);
+    public function fulfillPaidOrder(array $order): array
+    {
+        if ((string) ($order['payment_status'] ?? '') !== 'paid'
+            && !in_array((string) ($order['status'] ?? ''), ['paid', 'paid_pending_grant', 'grant_failed'], true)) {
+            throw new \RuntimeException('Order payment is not confirmed.');
+        }
+
+        return $this->grantPaidOrder($order);
     }
 
     public function regrant(string $outTradeNo): array
@@ -510,12 +557,38 @@ final class OrderService
             return false;
         }
 
+        if (empty($order['return_token_expires_at']) || strtotime((string) $order['return_token_expires_at']) <= time()) {
+            return false;
+        }
+
         $hash = (string) ($order['return_token_hash'] ?? '');
         return $hash !== '' && hash_equals($hash, hash('sha256', $returnToken));
     }
 
     /**
+     * Atomically consume a one-time return token.
+     */
+    public function consumeReturnToken(string $outTradeNo, string $returnToken): bool
+    {
+        if (!$this->isValidTradeNo($outTradeNo) || !preg_match('/^[a-f0-9]{64}$/', $returnToken)) {
+            return false;
+        }
+
+        $updated = $this->db->query($this->db->update('table.pay_orders')->rows([
+            'return_token_used' => 1,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ])->where('out_trade_no = ?', $outTradeNo)
+            ->where('return_token_hash = ?', hash('sha256', $returnToken))
+            ->where('return_token_used = ?', 0)
+            ->where('return_token_expires_at > ?', date('Y-m-d H:i:s')));
+
+        return (int) $updated === 1;
+    }
+
+    /**
      * Mark a return token as used so it cannot be reused.
+     *
+     * @deprecated Use consumeReturnToken() so validation and consumption are atomic.
      */
     public function markReturnTokenUsed(string $outTradeNo): void
     {
@@ -526,7 +599,22 @@ final class OrderService
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'return_token_used' => 1,
             'updated_at' => date('Y-m-d H:i:s'),
+        ])->where('out_trade_no = ?', $outTradeNo)
+            ->where('return_token_used = ?', 0));
+    }
+
+    public function rotateDeliveryToken(string $outTradeNo, string $deliveryToken): bool
+    {
+        if (!$this->isValidTradeNo($outTradeNo) || !preg_match('/^[a-f0-9]{64}$/', $deliveryToken)) {
+            return false;
+        }
+
+        $updated = $this->db->query($this->db->update('table.pay_orders')->rows([
+            'delivery_token_hash' => hash('sha256', $deliveryToken),
+            'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $outTradeNo));
+
+        return (int) $updated === 1;
     }
 
     /**

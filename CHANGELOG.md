@@ -2,13 +2,22 @@
 
 ## Unreleased
 
+## 0.3.1 - 2026-06-26
+
+- Fixed active-order reuse so existing payment sessions are not recreated with the same `out_trade_no`.
+- Preserved existing payment return tokens during active-order reuse and only rotated poll/delivery access tokens where safe.
+- Added `return_token_expires_at` and atomic return-token consumption before issuing a delivery cookie.
+- Removed generated long-lived delivery tokens from delivery URLs; delivery access now uses HttpOnly cookie or owner checks.
+- Fixed IP rate limiting to use 64-character nonce hashes and Typecho query builder counts.
+- Decoupled payment confirmation from fulfillment so verified paid callbacks are acknowledged even if local delivery fails.
+
 ## 0.3.0 - 2026-06-26
 
 - Added admin product and card-code inventory management panel.
 - Added encrypted card-code import using AES-256-GCM and per-product duplicate fingerprints.
 - Added card-code reservation before gateway creation and idempotent delivery after payment success.
 - Added release of reserved card-code stock when orders fail, expire, cancel, or close.
-- Added secure card delivery page guarded by poll token or order ownership.
+- Added secure card delivery page guarded by delivery token/cookie or order ownership.
 - Added `CardCodeCipherTest` for encrypted card-code round trips.
 - Added product-mode payment entries that resolve current server-side product price by `product` or `product_id`.
 - Added product snapshot columns to orders and created product, deliverable, fulfillment, card batch, and card inventory tables.

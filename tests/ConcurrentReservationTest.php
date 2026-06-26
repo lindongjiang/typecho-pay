@@ -64,10 +64,20 @@ tc_assert(
     strpos($createMethod, 'findActiveOrderForBuyer') !== false,
     'create() checks for active order before creating fresh'
 );
+tc_assert(strpos($orderServiceSource, 'makePollToken') === false, 'OrderService does not call removed makePollToken');
+tc_assert(strpos($createMethod, 'return_token_hash') === false, 'create() does not clear return token on reuse');
+tc_assert(strpos($orderServiceSource, 'skip_gateway_create') !== false, 'Reusable active orders skip duplicate gateway create');
+tc_assert(strpos($orderServiceSource, 'expired_at > ?') !== false, 'Active order reuse requires non-expired order');
+tc_assert(strpos($orderServiceSource, 'product_version = ?') !== false, 'Active order reuse requires same product version');
+tc_assert(strpos($orderServiceSource, 'amount = ?') !== false, 'Active order reuse requires same amount');
+tc_assert(strpos($orderServiceSource, 'currency = ?') !== false, 'Active order reuse requires same currency');
 
 // ---- Test 4: Rate limiting ----
 tc_assert(strpos($orderServiceSource, 'function assertRateLimit') !== false, 'Has assertRateLimit');
 tc_assert(strpos($orderServiceSource, 'RATE_LIMIT_MAX_PREPARES') !== false, 'Has RATE_LIMIT_MAX_PREPARES');
+tc_assert(strpos($orderServiceSource, "hash('sha256', \$scope . ':' . bin2hex(random_bytes(16)))") !== false, 'Rate-limit nonce hash stays 64 chars');
+tc_assert(strpos($orderServiceSource, 'quoteValue') === false, 'Rate limiting does not call Db::quoteValue');
+tc_assert(strpos($orderServiceSource, "select('COUNT(*) AS cnt')") !== false, 'Rate limiting uses query builder count');
 
 $actionSource = file_get_contents($root . '/Action.php');
 tc_assert(strpos($actionSource, 'assertRateLimit') !== false, 'Action calls assertRateLimit');
@@ -75,8 +85,9 @@ tc_assert(strpos($actionSource, 'assertRateLimit') !== false, 'Action calls asse
 // ---- Test 5: Plugin schema ----
 $pluginSource = file_get_contents($root . '/Plugin.php');
 tc_assert(strpos($pluginSource, 'uniq_reserved_order') !== false, 'Schema has uniq_reserved_order');
-tc_assert(strpos($pluginSource, 'SCHEMA_VERSION = 5') !== false, 'Schema version is 5');
+tc_assert(strpos($pluginSource, 'SCHEMA_VERSION = 6') !== false, 'Schema version is 6');
 tc_assert(strpos($pluginSource, 'return_token_hash') !== false, 'Schema has return_token_hash');
+tc_assert(strpos($pluginSource, 'return_token_expires_at') !== false, 'Schema has return_token_expires_at');
 tc_assert(strpos($pluginSource, 'delivery_token_hash') !== false, 'Schema has delivery_token_hash');
 tc_assert(strpos($pluginSource, 'return_token_used') !== false, 'Schema has return_token_used');
 
