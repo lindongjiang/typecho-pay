@@ -143,7 +143,8 @@ include 'menu.php';
                         <td><?php echo (int) ($row['attempts'] ?? 0); ?></td>
                         <td>
                             <?php if (!empty($row['last_error'])): ?>
-                                <span style="color:#ef4444;" title="<?php echo htmlspecialchars((string) $row['last_error']); ?>"><?php echo htmlspecialchars(mb_substr((string) $row['last_error'], 0, 30)); ?>...</span>
+                                <?php $shortErr = function_exists('mb_substr') ? mb_substr((string) $row['last_error'], 0, 30) : substr((string) $row['last_error'], 0, 30); ?>
+                                <span style="color:#ef4444;" title="<?php echo htmlspecialchars((string) $row['last_error']); ?>"><?php echo htmlspecialchars($shortErr); ?>...</span>
                             <?php else: ?>
                                 -
                             <?php endif; ?>

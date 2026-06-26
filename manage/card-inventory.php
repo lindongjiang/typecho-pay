@@ -36,7 +36,8 @@ if ($request->isPost()) {
     } catch (Throwable $e) {
         Notice::alloc()->set($e->getMessage(), 'error');
     }
-    $response->redirect($panelUrl . ($_GET['product_id'] ? '&product_id=' . (int) $_GET['product_id'] : ''));
+    $redirectPid = isset($_GET['product_id']) ? (int) $_GET['product_id'] : 0;
+    $response->redirect($panelUrl . ($redirectPid > 0 ? '&product_id=' . $redirectPid : ''));
     return;
 }
 
@@ -134,7 +135,7 @@ include 'menu.php';
                         <col width="12%">
                         <col width="18%">
                         <col width="8%">
-                        <th width="12%">
+                        <col width="12%">
                         <col width="12%">
                         <col width="10%">
                         <col width="7%">
@@ -161,7 +162,11 @@ include 'menu.php';
                         <?php
                         // Mask the card code for display.
                         $code = (string) ($row['code_ciphertext'] ?? '');
-                        $masked = $code !== '' ? mb_substr($code, 0, 8) . '****' : '****';
+                        $masked = '****';
+                        if ($code !== '') {
+                            $prefix = function_exists('mb_substr') ? mb_substr($code, 0, 8) : substr($code, 0, 8);
+                            $masked = $prefix . '****';
+                        }
                         ?>
                         <tr>
                             <td><input type="checkbox" name="ids[]" value="<?php echo (int) $row['id']; ?>"></td>
