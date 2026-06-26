@@ -2,6 +2,42 @@
 
 Date: 2026-06-25
 
+## 2026-06-26 Product/Fulfillment Foundation
+
+### Change
+
+Added the v0.3 product and fulfillment foundation so paid-reading can evolve toward card-code and multi-deliverable products without coupling stock delivery into payment gateways.
+
+### Scope
+
+- Added `ProductService` so new `[typechopay product="..."]` / `[typechopay product_id="..."]` entries resolve current server-side product price at click time.
+- Kept legacy `amount/currency` shortcodes working as a compatibility path, while documenting their stale-cache price limitation.
+- Added product snapshot fields to orders: `product_id`, `product_key`, `product_version`, and `product_snapshot_json`.
+- Split order state into `payment_status` and `fulfillment_status` while retaining legacy `status`.
+- Added `pay_products`, `pay_product_deliverables`, `pay_fulfillments`, `pay_card_batches`, and `pay_card_items` schema.
+- Added `FulfillmentManager` and fulfillment records for `post_access` / `content_block` entitlement delivery.
+- Changed guest login recovery to claim both guest orders and entitlements.
+- Removed runtime schema mutation from `OrderService`; schema changes now run through activation-time versioned migration.
+- Stopped reusing pending orders, which keeps each order poll token stable for its lifetime.
+- Replaced Alipay callback/query CNY amount parsing with string-based yuan-to-fen conversion.
+
+### Boundary
+
+Card-code tables are present for the next phase, but `CardCodeHandler`, admin import, atomic reservation, stock release, low-stock notifications, and refund/revoke behavior are not implemented in this commit.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+composer install --no-dev --prefer-dist --no-interaction --no-progress
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
+After deployment to an already-enabled Typecho site, disable and re-enable the plugin once, or otherwise invoke the activation migration, so schema version `4` and the new columns/tables are created.
+
 ## 2026-06-25 Configuration Compliance Follow-Up
 
 ### Change

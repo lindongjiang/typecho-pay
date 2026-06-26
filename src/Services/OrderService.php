@@ -27,24 +27,16 @@ final class OrderService
         'trade_closed' => 'closed',
     ];
 
-    private static bool $runtimeSchemaChecked = false;
-
     private Db $db;
 
     public function __construct(Db $db)
     {
         $this->db = $db;
-        $this->ensureRuntimeSchema();
     }
 
     public function create(array $input, ?int $userId = null, ?string $guestTokenHash = null): array
     {
-        $existing = $this->findReusablePending($input, $userId, $guestTokenHash);
-        if ($existing) {
-            return $this->refreshReusableOrder($existing, (string) ($input['return_to'] ?? '')) + ['reused' => true];
-        }
-
-        return $this->createFresh($input, $userId, $guestTokenHash) + ['reused' => false];
+        return $this->createFresh($input, $userId, $guestTokenHash);
     }
 
     private function createFresh(array $input, ?int $userId, ?string $guestTokenHash): array
@@ -69,9 +61,15 @@ final class OrderService
             'currency' => $currency,
             'biz_type' => $bizType,
             'biz_id' => $bizId,
+            'product_id' => isset($input['product_id']) ? (int) $input['product_id'] : null,
+            'product_key' => isset($input['product_key']) ? (string) $input['product_key'] : null,
+            'product_version' => isset($input['product_version']) ? (int) $input['product_version'] : 0,
+            'product_snapshot_json' => isset($input['product_snapshot_json']) ? (string) $input['product_snapshot_json'] : null,
             'user_id' => $userId,
             'guest_token_hash' => $guestTokenHash,
             'status' => 'pending',
+            'payment_status' => 'pending',
+            'fulfillment_status' => 'none',
             'poll_token_hash' => hash('sha256', $pollToken),
             'platform_trade_no' => null,
             'pay_url' => null,
@@ -92,64 +90,11 @@ final class OrderService
         return $order;
     }
 
-    private function refreshReusableOrder(array $order, string $returnTo): array
-    {
-        $pollToken = $this->makePollToken();
-        $rows = [
-            'poll_token_hash' => hash('sha256', $pollToken),
-            'updated_at' => date('Y-m-d H:i:s'),
-        ];
-
-        if ($returnTo !== '' && (string) ($order['return_to'] ?? '') !== $returnTo) {
-            $rows['return_to'] = $returnTo;
-        }
-
-        $this->db->query($this->db->update('table.pay_orders')->rows($rows)->where('out_trade_no = ?', $order['out_trade_no']));
-
-        if (isset($rows['return_to'])) {
-            $order['return_to'] = $returnTo;
-        }
-        $order['poll_token_hash'] = $rows['poll_token_hash'];
-        $order['poll_token'] = $pollToken;
-
-        return $order;
-    }
-
-    public function findReusablePending(array $input, ?int $userId, ?string $guestTokenHash): ?array
-    {
-        $amount = Money::assertAmount($input['amount'] ?? 0);
-        $currency = Money::assertCurrency($input['currency'] ?? 'CNY');
-        $bizType = $this->assertBizType((string) ($input['biz_type'] ?? 'post'));
-        $bizId = $this->assertBizId($input['biz_id'] ?? null);
-        $gateway = (string) ($input['gateway'] ?? '');
-
-        $select = $this->db->select()->from('table.pay_orders')
-            ->where('gateway = ?', $gateway)
-            ->where('biz_type = ?', $bizType)
-            ->where('amount = ?', $amount)
-            ->where('currency = ?', $currency)
-            ->where('status = ?', 'pending')
-            ->where('expired_at > ?', date('Y-m-d H:i:s'))
-            ->order('created_at', Db::SORT_DESC)
-            ->limit(1);
-
-        $select->where('biz_id = ?', $bizId);
-
-        if ($userId !== null) {
-            $select->where('user_id = ?', $userId);
-        } elseif ($guestTokenHash !== null) {
-            $select->where('guest_token_hash = ?', $guestTokenHash);
-        } else {
-            return null;
-        }
-
-        return $this->db->fetchRow($select);
-    }
-
     public function attachCreateResult(string $outTradeNo, PayCreateResult $result): void
     {
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'pending',
+            'payment_status' => 'pending',
             'pay_url' => $result->payUrl,
             'qr_content' => $result->qrContent,
             'updated_at' => date('Y-m-d H:i:s'),
@@ -192,6 +137,8 @@ final class OrderService
         $paidAt = date('Y-m-d H:i:s');
         $updated = $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'paid_pending_grant',
+            'payment_status' => 'paid',
+            'fulfillment_status' => 'pending',
             'platform_trade_no' => $result->platformTradeNo,
             'paid_at' => $paidAt,
             'updated_at' => $paidAt,
@@ -204,6 +151,8 @@ final class OrderService
 
         $pendingOrder = array_merge($order, [
             'status' => 'paid_pending_grant',
+            'payment_status' => 'paid',
+            'fulfillment_status' => 'pending',
             'platform_trade_no' => $result->platformTradeNo,
             'paid_at' => $paidAt,
             'updated_at' => $paidAt,
@@ -228,17 +177,18 @@ final class OrderService
 
     private function grantPaidOrder(array $order): array
     {
-        try {
-            (new AccessService($this->db))->grant($order);
-        } catch (\Throwable $e) {
+        $fulfillmentStatus = (new FulfillmentManager($this->db))->fulfillOrder($order);
+        if (in_array($fulfillmentStatus, ['failed', 'none'], true)) {
             $this->db->query($this->db->update('table.pay_orders')->rows([
                 'status' => 'grant_failed',
+                'payment_status' => 'paid',
+                'fulfillment_status' => 'failed',
                 'updated_at' => date('Y-m-d H:i:s'),
             ])->where('out_trade_no = ?', $order['out_trade_no'])
                 ->where('status IN ?', array_merge(['paid'], self::GRANTABLE_STATUSES)));
 
             $this->recordEvent($order['out_trade_no'], 'system', 'grant_failed', false, [
-                'error' => $e->getMessage(),
+                'fulfillment_status' => $fulfillmentStatus,
             ]);
 
             throw new \RuntimeException('Payment was confirmed but entitlement grant failed.');
@@ -246,6 +196,8 @@ final class OrderService
 
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'paid',
+            'payment_status' => 'paid',
+            'fulfillment_status' => $fulfillmentStatus,
             'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $order['out_trade_no'])
             ->where('status IN ?', array_merge(['paid'], self::GRANTABLE_STATUSES)));
@@ -266,6 +218,8 @@ final class OrderService
 
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'failed',
+            'payment_status' => 'failed',
+            'fulfillment_status' => 'none',
             'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $outTradeNo)->where('status IN ?', self::PAYABLE_STATUSES));
 
@@ -280,6 +234,7 @@ final class OrderService
 
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'processing',
+            'payment_status' => 'processing',
             'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $outTradeNo)->where('status = ?', 'pending'));
     }
@@ -292,6 +247,7 @@ final class OrderService
 
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'processing',
+            'payment_status' => 'processing',
             'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $outTradeNo)->where('status IN ?', self::PAYABLE_STATUSES));
 
@@ -314,6 +270,8 @@ final class OrderService
 
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => $normalized,
+            'payment_status' => $normalized,
+            'fulfillment_status' => 'none',
             'platform_trade_no' => $result->platformTradeNo,
             'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $result->outTradeNo)
@@ -392,6 +350,8 @@ final class OrderService
                 'out_trade_no' => $order['out_trade_no'],
                 'gateway' => $order['gateway'],
                 'status' => $order['status'],
+                'payment_status' => $order['payment_status'] ?? $order['status'],
+                'fulfillment_status' => $order['fulfillment_status'] ?? null,
                 'amount' => (int) $order['amount'],
                 'currency' => $order['currency'],
                 'amount_display' => Money::formatForDisplay((int) $order['amount'], (string) $order['currency']),
@@ -472,26 +432,5 @@ final class OrderService
     private function isTerminalStatus(string $status): bool
     {
         return in_array($status, ['paid', 'grant_failed', 'expired', 'cancelled', 'failed', 'closed'], true);
-    }
-
-    private function ensureRuntimeSchema(): void
-    {
-        if (self::$runtimeSchemaChecked) {
-            return;
-        }
-        self::$runtimeSchemaChecked = true;
-
-        $adapter = strtolower($this->db->getAdapterName());
-        $prefix = $this->db->getPrefix();
-        $isMysql = strpos($adapter, 'mysql') !== false || strpos($adapter, 'mysqli') !== false;
-        $isPgsql = strpos($adapter, 'pgsql') !== false;
-        $ordersTable = $isMysql ? '`' . $prefix . 'pay_orders`' : '"' . $prefix . 'pay_orders"';
-        $string128 = $isMysql || $isPgsql ? 'VARCHAR(128)' : 'TEXT';
-
-        try {
-            $this->db->query("ALTER TABLE {$ordersTable} ADD COLUMN poll_token_hash {$string128} DEFAULT NULL", Db::WRITE, '');
-        } catch (\Throwable $e) {
-            // The column already exists on current installs; this is a best-effort runtime migration for older ones.
-        }
     }
 }

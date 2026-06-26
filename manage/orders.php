@@ -34,14 +34,16 @@ $orders = $db->fetchAll($select);
         <div class="typecho-table-wrap">
             <table class="typecho-list-table">
                 <colgroup>
-                    <col width="17%">
+                    <col width="14%">
+                    <col width="8%">
+                    <col width="18%">
+                    <col width="9%">
+                    <col width="8%">
+                    <col width="8%">
+                    <col width="8%">
+                    <col width="12%">
                     <col width="10%">
-                    <col width="20%">
-                    <col width="10%">
-                    <col width="10%">
-                    <col width="13%">
-                    <col width="13%">
-                    <col width="7%">
+                    <col width="5%">
                 </colgroup>
                 <thead>
                 <tr>
@@ -50,6 +52,8 @@ $orders = $db->fetchAll($select);
                     <th><?php _e('标题'); ?></th>
                     <th><?php _e('金额'); ?></th>
                     <th><?php _e('状态'); ?></th>
+                    <th><?php _e('支付'); ?></th>
+                    <th><?php _e('交付'); ?></th>
                     <th><?php _e('创建时间'); ?></th>
                     <th><?php _e('支付时间'); ?></th>
                     <th><?php _e('操作'); ?></th>
@@ -58,7 +62,7 @@ $orders = $db->fetchAll($select);
                 <tbody>
                 <?php if (!$orders): ?>
                     <tr>
-                        <td colspan="8"><h6 class="typecho-list-table-title"><?php _e('暂无订单'); ?></h6></td>
+                        <td colspan="10"><h6 class="typecho-list-table-title"><?php _e('暂无订单'); ?></h6></td>
                     </tr>
                 <?php endif; ?>
                 <?php foreach ($orders as $order): ?>
@@ -68,10 +72,12 @@ $orders = $db->fetchAll($select);
                         <td><?php echo htmlspecialchars($order['subject']); ?></td>
                         <td><?php echo htmlspecialchars($order['currency'] . ' ' . $order['amount']); ?></td>
                         <td><?php echo htmlspecialchars($order['status']); ?></td>
+                        <td><?php echo htmlspecialchars((string) ($order['payment_status'] ?? $order['status'])); ?></td>
+                        <td><?php echo htmlspecialchars((string) ($order['fulfillment_status'] ?? '')); ?></td>
                         <td><?php echo htmlspecialchars($order['created_at']); ?></td>
                         <td><?php echo htmlspecialchars((string) $order['paid_at']); ?></td>
                         <td>
-                            <?php if (in_array($order['status'], ['paid', 'paid_pending_grant', 'grant_failed'], true)): ?>
+                            <?php if (in_array($order['status'], ['paid', 'paid_pending_grant', 'grant_failed'], true) || in_array(($order['fulfillment_status'] ?? ''), ['failed', 'partial'], true)): ?>
                                 <form method="post" action="<?php echo htmlspecialchars($security->getIndex('/action/typechopay?do=grant')); ?>">
                                     <input type="hidden" name="out_trade_no" value="<?php echo htmlspecialchars($order['out_trade_no']); ?>">
                                     <button class="btn btn-xs" type="submit"><?php _e('重发权益'); ?></button>

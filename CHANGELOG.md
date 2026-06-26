@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Added product-mode payment entries that resolve current server-side product price by `product` or `product_id`.
+- Added product snapshot columns to orders and created product, deliverable, fulfillment, card batch, and card inventory tables.
+- Split payment state into `payment_status` and fulfillment state into `fulfillment_status` while keeping legacy `status`.
+- Added a minimal fulfillment manager for `post_access` and `content_block` entitlement delivery.
+- Changed guest recovery to claim both guest orders and guest entitlements after login.
+- Removed runtime schema mutation from business requests and moved schema upgrades behind an activation-time schema version.
+- Stopped reusing pending orders so each order keeps a stable poll token for its lifetime.
+- Parsed Alipay yuan amounts with string arithmetic instead of floating-point conversion.
 - Fixed PayPay transaction webhook parsing for `merchant_order_id`, `order_id`, `order_amount`, `merchant_id`, and `notification_type`.
 - Added per-order poll tokens for query/return access control and removed `return_to` from public query responses.
 - Added click-time payment entry preparation so cached article HTML no longer embeds short-lived nonce values.

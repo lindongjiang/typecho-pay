@@ -5,8 +5,10 @@ namespace TypechoPlugin\TypechoPay;
 use Typecho\Db;
 use Typecho\Common;
 use TypechoPlugin\TypechoPay\Gateways\GatewayFactory;
+use TypechoPlugin\TypechoPay\Services\GuestClaimService;
 use TypechoPlugin\TypechoPay\Services\NonceService;
 use TypechoPlugin\TypechoPay\Services\OrderService;
+use TypechoPlugin\TypechoPay\Services\ProductService;
 use TypechoPlugin\TypechoPay\Support\GuestToken;
 use TypechoPlugin\TypechoPay\Support\HttpHeaders;
 use TypechoPlugin\TypechoPay\Support\Signer;
@@ -70,14 +72,7 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $config = Plugin::pluginConfig($this->options);
-        $payload = [
-            'gateway' => strtolower((string) $this->request->get('gateway')),
-            'amount' => (string) $this->request->get('amount'),
-            'currency' => strtoupper((string) $this->request->get('currency')),
-            'subject' => (string) $this->request->get('subject'),
-            'biz_type' => (string) $this->request->get('biz_type'),
-            'biz_id' => (string) $this->request->get('biz_id'),
-            'return_to' => (string) $this->request->get('return_to'),
+        $payload = $this->entryPayloadFromRequest() + [
             'ts' => (string) $this->request->get('ts'),
             'nonce' => (string) $this->request->get('nonce'),
         ];
@@ -98,15 +93,7 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $config = Plugin::pluginConfig($this->options);
-        $payload = [
-            'gateway' => strtolower((string) $this->request->get('gateway')),
-            'amount' => (string) $this->request->get('amount'),
-            'currency' => strtoupper((string) $this->request->get('currency')),
-            'subject' => (string) $this->request->get('subject'),
-            'biz_type' => (string) $this->request->get('biz_type'),
-            'biz_id' => (string) $this->request->get('biz_id'),
-            'return_to' => (string) $this->request->get('return_to'),
-        ];
+        $payload = $this->entryPayloadFromRequest();
 
         if (!Signer::verify($payload, Plugin::signingSecret($this->options, $config), (string) $this->request->get('entry_signature'))) {
             throw new \InvalidArgumentException('Invalid payment entry signature.');
@@ -123,8 +110,22 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $payload['return_to'] = $this->safeReturnTo($payload['return_to']);
-        $this->assertGatewayCurrency($gateway, $payload['currency']);
-        $this->assertBizTarget((string) $payload['biz_type'], (string) $payload['biz_id']);
+        $product = (new ProductService(Db::get()))->resolve($payload);
+        $this->assertGatewayCurrency($gateway, (string) $product['currency']);
+        $this->assertBizTarget((string) $product['biz_type'], (string) $product['biz_id']);
+
+        $orderInput = array_merge($payload, [
+            'amount' => (int) $product['amount'],
+            'currency' => (string) $product['currency'],
+            'subject' => (string) $product['subject'],
+            'biz_type' => (string) $product['biz_type'],
+            'biz_id' => (int) $product['biz_id'],
+            'product_id' => $product['product_id'],
+            'product_key' => $product['product_key'],
+            'product_version' => (int) $product['product_version'],
+            'product_snapshot_json' => (string) $product['product_snapshot_json'],
+            'purchase_policy' => (string) $product['purchase_policy'],
+        ]);
 
         $orderService = new OrderService(Db::get());
         $accessService = new Services\AccessService(Db::get());
@@ -132,19 +133,15 @@ class Action extends BaseOptions implements ActionInterface
         $guestToken = $userId === null ? GuestToken::getOrCreate() : GuestToken::get();
         $guestTokenHash = GuestToken::hash($guestToken);
         if ($userId !== null) {
-            $accessService->claimGuestEntitlements($userId, $guestTokenHash);
+            (new GuestClaimService(Db::get()))->claimAll($userId, $guestTokenHash);
         }
 
-        if ($accessService->canAccess((string) $payload['biz_type'], (int) $payload['biz_id'], $userId, $guestTokenHash)) {
+        if (($product['purchase_policy'] ?? 'once') === 'once'
+            && $accessService->canAccess((string) $product['biz_type'], (int) $product['biz_id'], $userId, $guestTokenHash)) {
             throw new \InvalidArgumentException('Content is already purchased.');
         }
 
-        $order = $orderService->create($payload + ['gateway' => $gateway], $userId, $guestTokenHash);
-
-        if (!empty($order['reused']) && ($order['pay_url'] || $order['qr_content'])) {
-            $this->renderPayment($order, $this->createResultFromOrder($order));
-            return;
-        }
+        $order = $orderService->create($orderInput + ['gateway' => $gateway], $userId, $guestTokenHash);
 
         try {
             $adapter = GatewayFactory::make($gateway, $config, $this->options);
@@ -161,6 +158,23 @@ class Action extends BaseOptions implements ActionInterface
 
         $orderService->attachCreateResult($order['out_trade_no'], $result);
         $this->renderPayment($order, $result);
+    }
+
+    private function entryPayloadFromRequest(): array
+    {
+        $payload = [
+            'gateway' => strtolower((string) $this->request->get('gateway')),
+            'return_to' => (string) $this->request->get('return_to'),
+        ];
+
+        foreach (['product_id', 'product', 'amount', 'currency', 'subject', 'biz_type', 'biz_id', 'purchase_policy'] as $key) {
+            $value = $this->request->get($key);
+            if ($value !== null && (string) $value !== '') {
+                $payload[$key] = $key === 'currency' ? strtoupper((string) $value) : (string) $value;
+            }
+        }
+
+        return $payload;
     }
 
     private function notify(): void
@@ -252,7 +266,8 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? $this->request->get('return_to')));
-        if ($order && $order['status'] === 'paid') {
+        $fulfillmentStatus = (string) ($order['fulfillment_status'] ?? '');
+        if ($order && $order['status'] === 'paid' && !in_array($fulfillmentStatus, ['failed', 'partial'], true)) {
             $this->response->redirect($returnTo);
             return;
         }
@@ -260,9 +275,11 @@ class Action extends BaseOptions implements ActionInterface
         $safeOutTradeNo = htmlspecialchars($outTradeNo);
         $safeReturnTo = htmlspecialchars($returnTo);
         $status = htmlspecialchars((string) ($order['status'] ?? 'unknown'));
+        $fulfillment = htmlspecialchars($fulfillmentStatus);
         $this->response->throwContent(
             '<!doctype html><meta charset="utf-8"><title>Payment Return</title>'
             . '<p>订单状态：' . $status . '</p>'
+            . ($fulfillment !== '' ? '<p>交付状态：' . $fulfillment . '</p>' : '')
             . ($safeOutTradeNo !== '' ? '<p>订单号：' . $safeOutTradeNo . '</p>' : '')
             . '<p><a href="' . $safeReturnTo . '">返回查看内容</a></p>',
             'text/html'
@@ -324,7 +341,7 @@ class Action extends BaseOptions implements ActionInterface
                 . 'if(window.QRCode&&box){new QRCode(box,{text:box.getAttribute("data-text"),width:240,height:240,correctLevel:QRCode.CorrectLevel.M});}'
                 . 'var status=document.getElementById("typechopay-status");'
                 . 'var returnTo=' . json_encode($returnTo) . ';'
-                . 'var timer=setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"){clearInterval(timer);location.href=returnTo;}else if(j.data.status==="grant_failed"){clearInterval(timer);status.textContent="支付成功，权益发放失败，请联系站点管理员。";}else if(j.data.terminal){clearInterval(timer);status.textContent="订单状态："+j.data.status+"，请重新发起支付。";}}}).catch(function(){});},3000);'
+                . 'var timer=setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"&&j.data.fulfillment_status!=="failed"&&j.data.fulfillment_status!=="partial"){clearInterval(timer);location.href=returnTo;}else if(j.data.status==="grant_failed"||j.data.fulfillment_status==="failed"||j.data.fulfillment_status==="partial"){clearInterval(timer);status.textContent="支付成功，交付未完全完成，请联系站点管理员。";}else if(j.data.terminal){clearInterval(timer);status.textContent="订单状态："+j.data.status+"，请重新发起支付。";}}}).catch(function(){});},3000);'
                 . '}());</script>';
         } elseif ($payUrl) {
             $html .= '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付链接</a></p>';
@@ -455,7 +472,7 @@ class Action extends BaseOptions implements ActionInterface
         $userId = $this->user->hasLogin() ? (int) $this->user->uid : null;
         $guestTokenHash = GuestToken::hash(GuestToken::get());
         if ($userId !== null && $guestTokenHash !== null) {
-            (new Services\AccessService(Db::get()))->claimGuestEntitlements($userId, $guestTokenHash);
+            (new GuestClaimService(Db::get()))->claimAll($userId, $guestTokenHash);
         }
 
         return $orderService->belongsToOwner($order, $userId, $guestTokenHash);
@@ -478,14 +495,5 @@ class Action extends BaseOptions implements ActionInterface
         $this->response->setHeader('Cache-Control', 'private, no-store, max-age=0');
         $this->response->setHeader('Pragma', 'no-cache');
         $this->response->setHeader('Expires', '0');
-    }
-
-    private function createResultFromOrder(array $order)
-    {
-        return new Contracts\PayCreateResult(
-            $order['qr_content'] ? 'qr' : 'redirect',
-            $order['pay_url'] ?: null,
-            $order['qr_content'] ?: null
-        );
     }
 }

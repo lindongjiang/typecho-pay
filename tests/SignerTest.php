@@ -50,4 +50,23 @@ if (Signer::verify($tamperedReturnTo, $secret, $signature) !== false) {
     exit(1);
 }
 
+$productPayload = [
+    'product_id' => '18',
+    'gateway' => 'alipay',
+    'return_to' => 'https://example.com/post/100.html',
+];
+$productSignature = Signer::sign($productPayload, $secret);
+
+if (Signer::verify($productPayload, $secret, $productSignature) !== true) {
+    fwrite(STDERR, "Expected product entry signature to pass\n");
+    exit(1);
+}
+
+$tamperedProduct = $productPayload;
+$tamperedProduct['product_id'] = '19';
+if (Signer::verify($tamperedProduct, $secret, $productSignature) !== false) {
+    fwrite(STDERR, "Expected tampered product id to fail\n");
+    exit(1);
+}
+
 echo "SignerTest passed\n";

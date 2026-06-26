@@ -176,9 +176,14 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
         <!-- 短代码使用说明 -->
         <div class="table-description" style="margin-top:30px;">
             <h3>📝 短代码使用说明</h3>
-            <p>在文章中插入以下短代码创建支付入口：</p>
+            <p>推荐使用商品模式创建支付入口，文章 HTML 只保存商品标识，点击时服务端读取当前价格：</p>
 
-            <h4 style="margin-top:15px;">基础支付按钮</h4>
+            <h4 style="margin-top:15px;">商品支付按钮（推荐）</h4>
+            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product="article-123-premium" gateways="paypay,alipay"]</code></pre>
+            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product_id="18" gateways="alipay"]</code></pre>
+            <p><strong>说明：</strong>商品价格、币种、购买策略和交付规则来自 <code>pay_products</code> / <code>pay_product_deliverables</code>。管理员改价后，旧缓存页面也会按服务端当前商品价格创建订单。</p>
+
+            <h4 style="margin-top:15px;">旧版金额支付按钮（兼容）</h4>
             <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay amount="500" currency="JPY" subject="商品名称" gateways="paypay"]</code></pre>
             <p><strong>参数说明：</strong></p>
             <ul>
@@ -187,6 +192,7 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
                 <li><code>subject</code>：商品/订单标题，可选，默认使用文章标题</li>
                 <li><code>gateways</code>：指定支付方式（paypay/wechat/alipay），多个用逗号分隔，可选</li>
             </ul>
+            <p><strong>注意：</strong>旧版金额短代码会把金额写入页面签名，适合过渡兼容；开启 CDN 或静态缓存的网站正式改价时，应迁移到商品模式。</p>
 
             <h4 style="margin-top:15px;">付费阅读内容</h4>
             <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay_content]
@@ -223,6 +229,9 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
                 <li><strong>JPY（日元）：</strong>最小单位是日元整数，<code>amount="500"</code> 表示 500 日元</li>
                 <li><strong>CNY（人民币）：</strong>最小单位是分，<code>amount="500"</code> 表示 5.00 元</li>
             </ul>
+
+            <h4 style="margin-top:15px;">Q: 升级后商品模式提示商品表未准备？</h4>
+            <p>A: 请在 Typecho 后台停用并重新启用 TypechoPay，让插件执行 schema 版本迁移。迁移只新增列和表，不会删除历史订单。</p>
         </div>
 
         <div style="margin-top:40px;padding:20px;background:#f9f9f9;border:1px solid #ddd;">

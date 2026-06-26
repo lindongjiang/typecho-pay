@@ -33,6 +33,19 @@ final class Money
         return number_format($amount / 100, 2, '.', '');
     }
 
+    public static function yuanStringToFen(string $amount): int
+    {
+        $value = trim($amount);
+        if (!preg_match('/^\d+(?:\.\d{1,2})?$/', $value)) {
+            throw new \InvalidArgumentException('Invalid CNY amount.');
+        }
+
+        [$yuan, $fen] = array_pad(explode('.', $value, 2), 2, '');
+        $fen = str_pad(substr($fen, 0, 2), 2, '0');
+
+        return ((int) $yuan * 100) + (int) $fen;
+    }
+
     public static function formatForDisplay(int $amount, string $currency): string
     {
         $currency = strtoupper($currency);

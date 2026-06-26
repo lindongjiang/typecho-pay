@@ -17,9 +17,13 @@ final class AccessService
         $this->db = $db;
     }
 
-    public function grant(array $order): void
+    public function grant(array $order, ?array $deliverable = null): void
     {
-        if (empty($order['id']) || empty($order['biz_type']) || empty($order['biz_id'])) {
+        $bizType = $deliverable['biz_type'] ?? $deliverable['target_type'] ?? $order['biz_type'] ?? null;
+        $bizId = $deliverable['biz_id'] ?? $deliverable['target_id'] ?? $order['biz_id'] ?? null;
+        $deliverableId = isset($deliverable['id']) ? (int) $deliverable['id'] : 0;
+
+        if (empty($order['id']) || empty($bizType) || empty($bizId)) {
             throw new \RuntimeException('Invalid entitlement target.');
         }
 
@@ -27,7 +31,7 @@ final class AccessService
             throw new \RuntimeException('Missing entitlement owner.');
         }
 
-        if ($this->hasOrderGrant((int) $order['id'])) {
+        if ($this->hasOrderGrant((int) $order['id'], $deliverableId)) {
             return;
         }
 
@@ -35,8 +39,9 @@ final class AccessService
         try {
             $this->db->query($this->db->insert('table.pay_entitlements')->rows([
                 'order_id' => (int) $order['id'],
-                'biz_type' => (string) $order['biz_type'],
-                'biz_id' => (int) $order['biz_id'],
+                'deliverable_id' => $deliverableId,
+                'biz_type' => (string) $bizType,
+                'biz_id' => (int) $bizId,
                 'user_id' => isset($order['user_id']) ? (int) $order['user_id'] : null,
                 'guest_token_hash' => $order['guest_token_hash'] ?? null,
                 'starts_at' => $now,
@@ -44,7 +49,7 @@ final class AccessService
                 'created_at' => $now,
             ]));
         } catch (\Throwable $e) {
-            if ($this->hasOrderGrant((int) $order['id'])) {
+            if ($this->hasOrderGrant((int) $order['id'], $deliverableId)) {
                 return;
             }
 
@@ -52,14 +57,17 @@ final class AccessService
         }
     }
 
-    public function hasOrderGrant(int $orderId): bool
+    public function hasOrderGrant(int $orderId, int $deliverableId = 0): bool
     {
         if ($orderId <= 0) {
             return false;
         }
 
         return (bool) $this->db->fetchRow(
-            $this->db->select('id')->from('table.pay_entitlements')->where('order_id = ?', $orderId)->limit(1)
+            $this->db->select('id')->from('table.pay_entitlements')
+                ->where('order_id = ?', $orderId)
+                ->where('deliverable_id = ?', $deliverableId)
+                ->limit(1)
         );
     }
 

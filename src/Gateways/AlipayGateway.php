@@ -73,7 +73,7 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         $status = in_array($tradeStatus, ['TRADE_SUCCESS', 'TRADE_FINISHED'], true)
             ? 'paid'
             : strtolower($tradeStatus ?: 'ignored');
-        $amount = isset($post['total_amount']) ? (int) round(((float) $post['total_amount']) * 100) : null;
+        $amount = isset($post['total_amount']) ? Money::yuanStringToFen((string) $post['total_amount']) : null;
 
         if (($post['app_id'] ?? '') !== $this->config['alipayAppId']) {
             $signatureOk = false;
@@ -110,7 +110,7 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         $data = json_decode(json_encode($response), true);
         $result = is_array($data) ? ($data['alipay_trade_query_response'] ?? $data) : [];
         $tradeStatus = (string) ($result['trade_status'] ?? '');
-        $amount = isset($result['total_amount']) ? (int) round(((float) $result['total_amount']) * 100) : null;
+        $amount = isset($result['total_amount']) ? Money::yuanStringToFen((string) $result['total_amount']) : null;
 
         return new NotifyResult(
             in_array($tradeStatus, ['TRADE_SUCCESS', 'TRADE_FINISHED'], true) ? 'paid' : strtolower($tradeStatus ?: 'pending'),

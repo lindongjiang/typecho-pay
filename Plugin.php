@@ -12,6 +12,8 @@ use Typecho\Widget\Helper\Form\Element\Select;
 use Typecho\Widget\Helper\Form\Element\Text;
 use Typecho\Widget\Helper\Form\Element\Textarea;
 use TypechoPlugin\TypechoPay\Services\AccessService;
+use TypechoPlugin\TypechoPay\Services\GuestClaimService;
+use TypechoPlugin\TypechoPay\Services\ProductService;
 use TypechoPlugin\TypechoPay\Support\GuestToken;
 use Utils\Helper;
 use Widget\Options;
@@ -58,6 +60,7 @@ class Plugin implements PluginInterface
     private const MENU = 'TypechoPay';
     private const ORDERS_PANEL = 'TypechoPay/manage/orders.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
+    private const SCHEMA_VERSION = 4;
 
     /**
      * 启用插件。
@@ -73,7 +76,7 @@ class Plugin implements PluginInterface
 
         \Typecho\Plugin::factory('Widget\Base\Contents')->contentEx = __CLASS__ . '::renderPayShortcodes';
 
-        return _t('TypechoPay 已启用，支付订单表已准备完成。');
+        return _t('TypechoPay 已启用，订单、商品和交付数据表已准备完成。');
     }
 
     /**
@@ -212,15 +215,23 @@ class Plugin implements PluginInterface
 
         return preg_replace_callback('/\[typechopay\s+([^\]]+)\]/i', function ($matches) use ($archive) {
             $attrs = self::parseShortcodeAttrs($matches[1]);
-            $amount = isset($attrs['amount']) ? (int) $attrs['amount'] : 0;
-            if ($amount <= 0) {
-                return '<p class="typechopay-error">' . htmlspecialchars(_t('支付入口金额无效')) . '</p>';
-            }
-
             $options = Options::alloc();
             $config = self::pluginConfig($options);
-            $currency = strtoupper($attrs['currency'] ?? ($config['defaultCurrency'] ?: 'JPY'));
-            $subject = trim($attrs['subject'] ?? ($archive->title ?? 'TypechoPay Order'));
+            [$bizType, $bizId] = self::resolveAccessTarget($attrs, $archive);
+            $productService = new ProductService(Db::get());
+
+            try {
+                $product = $productService->resolve($attrs, [
+                    'currency' => $config['defaultCurrency'] ?: 'JPY',
+                    'subject' => $archive->title ?? 'TypechoPay Order',
+                    'biz_type' => $bizType,
+                    'biz_id' => $bizId,
+                ]);
+            } catch (\Throwable $e) {
+                return '<p class="typechopay-error">' . htmlspecialchars($e->getMessage()) . '</p>';
+            }
+
+            $currency = (string) $product['currency'];
             $gateways = self::normalizeGateways($attrs['gateways'] ?? implode(',', $config['enabledGateways']));
             $gateways = array_values(array_intersect($gateways, $config['enabledGateways']));
             if (!$gateways) {
@@ -233,21 +244,15 @@ class Plugin implements PluginInterface
                 return '<p class="typechopay-error">' . htmlspecialchars(_t('当前币种没有可用支付方式')) . '</p>';
             }
 
-            [$bizType, $bizId] = self::resolveAccessTarget($attrs, $archive);
-            if (self::currentVisitorCanAccess($bizType, $bizId)) {
+            if (($product['purchase_policy'] ?? 'once') === 'once'
+                && self::currentVisitorCanAccess((string) $product['biz_type'], (int) $product['biz_id'])) {
                 return '<div class="typechopay-owned">' . htmlspecialchars(_t('已购买')) . '</div>';
             }
 
-            $payload = [
-                'amount' => (string) $amount,
-                'currency' => $currency,
-                'subject' => $subject,
-                'biz_type' => $bizType,
-                'biz_id' => (string) $bizId,
-                'return_to' => self::archiveReturnTo($archive, $options),
-            ];
+            $returnTo = self::archiveReturnTo($archive, $options);
+            $entryPayload = $productService->entryPayload($product, $returnTo);
 
-            return self::renderPayBox($payload, $gateways, $options, $config);
+            return self::renderPayBox($product, $entryPayload, $gateways, $options, $config);
         }, $content);
     }
 
@@ -292,7 +297,7 @@ class Plugin implements PluginInterface
         return $config['endpointSecret'] !== '' ? $config['endpointSecret'] : (string) $options->secret;
     }
 
-    private static function renderPayBox(array $payload, array $gateways, Options $options, array $config): string
+    private static function renderPayBox(array $display, array $entryPayload, array $gateways, Options $options, array $config): string
     {
         $action = Common::url('/action/' . self::ACTION . '?do=prepare', $options->index);
         $labels = [
@@ -303,7 +308,7 @@ class Plugin implements PluginInterface
 
         $buttons = [];
         foreach ($gateways as $gateway) {
-            $signedPayload = $payload + [
+            $signedPayload = $entryPayload + [
                 'gateway' => $gateway,
             ];
             $signedPayload['entry_signature'] = Support\Signer::sign($signedPayload, self::signingSecret($options, $config));
@@ -319,8 +324,8 @@ class Plugin implements PluginInterface
         }
 
         return '<div class="typechopay-box" data-typechopay="1">'
-            . '<strong>' . htmlspecialchars($payload['subject']) . '</strong>'
-            . '<span class="typechopay-amount">' . htmlspecialchars(Support\Money::formatForDisplay((int) $payload['amount'], (string) $payload['currency'])) . '</span>'
+            . '<strong>' . htmlspecialchars((string) $display['subject']) . '</strong>'
+            . '<span class="typechopay-amount">' . htmlspecialchars(Support\Money::formatForDisplay((int) $display['amount'], (string) $display['currency'])) . '</span>'
             . implode('', $buttons)
             . '</div>';
     }
@@ -361,7 +366,7 @@ class Plugin implements PluginInterface
         $userId = $user->hasLogin() ? (int) $user->uid : null;
         $guestTokenHash = GuestToken::hash(GuestToken::get());
         if ($userId !== null && $guestTokenHash !== null) {
-            (new AccessService(Db::get()))->claimGuestEntitlements($userId, $guestTokenHash);
+            (new GuestClaimService(Db::get()))->claimAll($userId, $guestTokenHash);
         }
 
         return (new AccessService(Db::get()))->canAccess($bizType, $bizId, $userId, $guestTokenHash);
@@ -416,12 +421,16 @@ class Plugin implements PluginInterface
         $db = Db::get();
         $adapter = strtolower($db->getAdapterName());
         $prefix = $db->getPrefix();
+        $schemaVersion = self::schemaVersion($db);
 
         foreach (self::schemaSql($adapter, $prefix) as $sql) {
             $db->query($sql, Db::WRITE, '');
         }
 
-        self::migrateExistingTables($db, $adapter, $prefix);
+        if ($schemaVersion < self::SCHEMA_VERSION) {
+            self::migrateExistingTables($db, $adapter, $prefix);
+            self::setSchemaVersion($db, self::SCHEMA_VERSION);
+        }
     }
 
     private static function schemaSql(string $adapter, string $prefix): array
@@ -442,6 +451,11 @@ class Plugin implements PluginInterface
         $orders = '`' . $prefix . 'pay_orders`';
         $events = '`' . $prefix . 'pay_events`';
         $entitlements = '`' . $prefix . 'pay_entitlements`';
+        $products = '`' . $prefix . 'pay_products`';
+        $deliverables = '`' . $prefix . 'pay_product_deliverables`';
+        $fulfillments = '`' . $prefix . 'pay_fulfillments`';
+        $cardBatches = '`' . $prefix . 'pay_card_batches`';
+        $cardItems = '`' . $prefix . 'pay_card_items`';
         $nonces = '`' . $prefix . 'pay_nonces`';
 
         return [
@@ -454,9 +468,15 @@ class Plugin implements PluginInterface
                 `currency` VARCHAR(8) NOT NULL DEFAULT 'CNY',
                 `biz_type` VARCHAR(32) NOT NULL DEFAULT 'post',
                 `biz_id` BIGINT UNSIGNED DEFAULT NULL,
+                `product_id` BIGINT UNSIGNED DEFAULT NULL,
+                `product_key` VARCHAR(128) DEFAULT NULL,
+                `product_version` INT NOT NULL DEFAULT 0,
+                `product_snapshot_json` MEDIUMTEXT DEFAULT NULL,
                 `user_id` BIGINT UNSIGNED DEFAULT NULL,
                 `guest_token_hash` VARCHAR(128) DEFAULT NULL,
                 `status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+                `payment_status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+                `fulfillment_status` VARCHAR(32) NOT NULL DEFAULT 'none',
                 `poll_token_hash` VARCHAR(128) DEFAULT NULL,
                 `platform_trade_no` VARCHAR(128) DEFAULT NULL,
                 `pay_url` TEXT DEFAULT NULL,
@@ -471,6 +491,7 @@ class Plugin implements PluginInterface
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_out_trade_no` (`out_trade_no`),
                 KEY `idx_biz` (`biz_type`, `biz_id`),
+                KEY `idx_product` (`product_id`, `product_key`),
                 KEY `idx_status` (`status`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS {$events} (
@@ -488,11 +509,12 @@ class Plugin implements PluginInterface
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 KEY `idx_order` (`out_trade_no`),
-                UNIQUE KEY `uniq_provider_event` (`gateway`, `provider_event_id`)
+                UNIQUE KEY `{$prefix}pay_events_uniq_provider_event` (`gateway`, `provider_event_id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS {$entitlements} (
                 `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `order_id` BIGINT UNSIGNED NOT NULL,
+                `deliverable_id` BIGINT UNSIGNED NOT NULL DEFAULT 0,
                 `biz_type` VARCHAR(32) NOT NULL,
                 `biz_id` BIGINT UNSIGNED NOT NULL,
                 `user_id` BIGINT UNSIGNED DEFAULT NULL,
@@ -501,9 +523,91 @@ class Plugin implements PluginInterface
                 `expires_at` DATETIME DEFAULT NULL,
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
-                UNIQUE KEY `uniq_order` (`order_id`),
+                UNIQUE KEY `uniq_order_deliverable` (`order_id`, `deliverable_id`),
                 KEY `idx_user_access` (`user_id`, `biz_type`, `biz_id`),
                 KEY `idx_guest_access` (`guest_token_hash`, `biz_type`, `biz_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$products} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `product_key` VARCHAR(128) NOT NULL,
+                `title` VARCHAR(255) NOT NULL,
+                `content_id` BIGINT UNSIGNED DEFAULT NULL,
+                `amount` BIGINT NOT NULL,
+                `currency` VARCHAR(8) NOT NULL DEFAULT 'CNY',
+                `status` VARCHAR(32) NOT NULL DEFAULT 'active',
+                `allow_guest` TINYINT(1) NOT NULL DEFAULT 1,
+                `purchase_policy` VARCHAR(32) NOT NULL DEFAULT 'once',
+                `max_per_user` INT DEFAULT NULL,
+                `duration_seconds` BIGINT DEFAULT NULL,
+                `version` INT NOT NULL DEFAULT 1,
+                `stock_policy` VARCHAR(32) NOT NULL DEFAULT 'none',
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_product_key` (`product_key`),
+                KEY `idx_content` (`content_id`),
+                KEY `idx_status` (`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$deliverables} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `product_id` BIGINT UNSIGNED NOT NULL,
+                `handler` VARCHAR(64) NOT NULL,
+                `target_type` VARCHAR(64) DEFAULT NULL,
+                `target_id` BIGINT UNSIGNED DEFAULT NULL,
+                `target_key` VARCHAR(128) DEFAULT NULL,
+                `config_json` MEDIUMTEXT DEFAULT NULL,
+                `sort_order` INT NOT NULL DEFAULT 0,
+                `enabled` TINYINT(1) NOT NULL DEFAULT 1,
+                PRIMARY KEY (`id`),
+                KEY `idx_product` (`product_id`, `enabled`, `sort_order`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$fulfillments} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `order_id` BIGINT UNSIGNED NOT NULL,
+                `deliverable_id` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                `handler` VARCHAR(64) NOT NULL,
+                `status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+                `attempts` INT NOT NULL DEFAULT 0,
+                `card_item_id` BIGINT UNSIGNED DEFAULT NULL,
+                `result_json` MEDIUMTEXT DEFAULT NULL,
+                `last_error` TEXT DEFAULT NULL,
+                `started_at` DATETIME DEFAULT NULL,
+                `fulfilled_at` DATETIME DEFAULT NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_order_deliverable` (`order_id`, `deliverable_id`),
+                KEY `idx_status` (`status`),
+                KEY `idx_card_item` (`card_item_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$cardBatches} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `product_id` BIGINT UNSIGNED NOT NULL,
+                `batch_name` VARCHAR(128) NOT NULL,
+                `imported_count` INT NOT NULL DEFAULT 0,
+                `imported_by` BIGINT UNSIGNED DEFAULT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                KEY `idx_product` (`product_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS {$cardItems} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `product_id` BIGINT UNSIGNED NOT NULL,
+                `batch_id` BIGINT UNSIGNED DEFAULT NULL,
+                `code_ciphertext` MEDIUMTEXT NOT NULL,
+                `secret_ciphertext` MEDIUMTEXT DEFAULT NULL,
+                `fingerprint` VARCHAR(128) NOT NULL,
+                `status` VARCHAR(32) NOT NULL DEFAULT 'available',
+                `reserved_order_id` BIGINT UNSIGNED DEFAULT NULL,
+                `reserved_until` DATETIME DEFAULT NULL,
+                `delivered_order_id` BIGINT UNSIGNED DEFAULT NULL,
+                `delivered_at` DATETIME DEFAULT NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_product_fingerprint` (`product_id`, `fingerprint`),
+                KEY `idx_product_status` (`product_id`, `status`),
+                KEY `idx_reserved_until` (`reserved_until`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS {$nonces} (
                 `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -523,6 +627,11 @@ class Plugin implements PluginInterface
         $orders = '"' . $prefix . 'pay_orders"';
         $events = '"' . $prefix . 'pay_events"';
         $entitlements = '"' . $prefix . 'pay_entitlements"';
+        $products = '"' . $prefix . 'pay_products"';
+        $deliverables = '"' . $prefix . 'pay_product_deliverables"';
+        $fulfillments = '"' . $prefix . 'pay_fulfillments"';
+        $cardBatches = '"' . $prefix . 'pay_card_batches"';
+        $cardItems = '"' . $prefix . 'pay_card_items"';
         $nonces = '"' . $prefix . 'pay_nonces"';
 
         return [
@@ -535,9 +644,15 @@ class Plugin implements PluginInterface
                 currency TEXT NOT NULL DEFAULT 'CNY',
                 biz_type TEXT NOT NULL DEFAULT 'post',
                 biz_id INTEGER DEFAULT NULL,
+                product_id INTEGER DEFAULT NULL,
+                product_key TEXT DEFAULT NULL,
+                product_version INTEGER NOT NULL DEFAULT 0,
+                product_snapshot_json TEXT DEFAULT NULL,
                 user_id INTEGER DEFAULT NULL,
                 guest_token_hash TEXT DEFAULT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
+                payment_status TEXT NOT NULL DEFAULT 'pending',
+                fulfillment_status TEXT NOT NULL DEFAULT 'none',
                 poll_token_hash TEXT DEFAULT NULL,
                 platform_trade_no TEXT DEFAULT NULL,
                 pay_url TEXT DEFAULT NULL,
@@ -551,6 +666,7 @@ class Plugin implements PluginInterface
                 updated_at TEXT NOT NULL
             )",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_orders_idx_biz\" ON {$orders} (biz_type, biz_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_orders_idx_product\" ON {$orders} (product_id, product_key)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_orders_idx_status\" ON {$orders} (status)",
             "CREATE TABLE IF NOT EXISTS {$events} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -570,7 +686,8 @@ class Plugin implements PluginInterface
             "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_events_uniq_provider_event\" ON {$events} (gateway, provider_event_id)",
             "CREATE TABLE IF NOT EXISTS {$entitlements} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id INTEGER NOT NULL UNIQUE,
+                order_id INTEGER NOT NULL,
+                deliverable_id INTEGER NOT NULL DEFAULT 0,
                 biz_type TEXT NOT NULL,
                 biz_id INTEGER NOT NULL,
                 user_id INTEGER DEFAULT NULL,
@@ -579,8 +696,85 @@ class Plugin implements PluginInterface
                 expires_at TEXT DEFAULT NULL,
                 created_at TEXT NOT NULL
             )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_uniq_order_deliverable\" ON {$entitlements} (order_id, deliverable_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_user_access\" ON {$entitlements} (user_id, biz_type, biz_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_guest_access\" ON {$entitlements} (guest_token_hash, biz_type, biz_id)",
+            "CREATE TABLE IF NOT EXISTS {$products} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_key TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                content_id INTEGER DEFAULT NULL,
+                amount INTEGER NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'CNY',
+                status TEXT NOT NULL DEFAULT 'active',
+                allow_guest INTEGER NOT NULL DEFAULT 1,
+                purchase_policy TEXT NOT NULL DEFAULT 'once',
+                max_per_user INTEGER DEFAULT NULL,
+                duration_seconds INTEGER DEFAULT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
+                stock_policy TEXT NOT NULL DEFAULT 'none',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_content\" ON {$products} (content_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_status\" ON {$products} (status)",
+            "CREATE TABLE IF NOT EXISTS {$deliverables} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                handler TEXT NOT NULL,
+                target_type TEXT DEFAULT NULL,
+                target_id INTEGER DEFAULT NULL,
+                target_key TEXT DEFAULT NULL,
+                config_json TEXT DEFAULT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_product_deliverables_idx_product\" ON {$deliverables} (product_id, enabled, sort_order)",
+            "CREATE TABLE IF NOT EXISTS {$fulfillments} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                deliverable_id INTEGER NOT NULL DEFAULT 0,
+                handler TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                card_item_id INTEGER DEFAULT NULL,
+                result_json TEXT DEFAULT NULL,
+                last_error TEXT DEFAULT NULL,
+                started_at TEXT DEFAULT NULL,
+                fulfilled_at TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_fulfillments_uniq_order_deliverable\" ON {$fulfillments} (order_id, deliverable_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_fulfillments_idx_status\" ON {$fulfillments} (status)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_fulfillments_idx_card_item\" ON {$fulfillments} (card_item_id)",
+            "CREATE TABLE IF NOT EXISTS {$cardBatches} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                batch_name TEXT NOT NULL,
+                imported_count INTEGER NOT NULL DEFAULT 0,
+                imported_by INTEGER DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_batches_idx_product\" ON {$cardBatches} (product_id)",
+            "CREATE TABLE IF NOT EXISTS {$cardItems} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                batch_id INTEGER DEFAULT NULL,
+                code_ciphertext TEXT NOT NULL,
+                secret_ciphertext TEXT DEFAULT NULL,
+                fingerprint TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'available',
+                reserved_order_id INTEGER DEFAULT NULL,
+                reserved_until TEXT DEFAULT NULL,
+                delivered_order_id INTEGER DEFAULT NULL,
+                delivered_at TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_uniq_product_fingerprint\" ON {$cardItems} (product_id, fingerprint)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_product_status\" ON {$cardItems} (product_id, status)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_reserved_until\" ON {$cardItems} (reserved_until)",
             "CREATE TABLE IF NOT EXISTS {$nonces} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nonce_hash TEXT NOT NULL UNIQUE,
@@ -597,6 +791,11 @@ class Plugin implements PluginInterface
         $orders = '"' . $prefix . 'pay_orders"';
         $events = '"' . $prefix . 'pay_events"';
         $entitlements = '"' . $prefix . 'pay_entitlements"';
+        $products = '"' . $prefix . 'pay_products"';
+        $deliverables = '"' . $prefix . 'pay_product_deliverables"';
+        $fulfillments = '"' . $prefix . 'pay_fulfillments"';
+        $cardBatches = '"' . $prefix . 'pay_card_batches"';
+        $cardItems = '"' . $prefix . 'pay_card_items"';
         $nonces = '"' . $prefix . 'pay_nonces"';
 
         return [
@@ -609,9 +808,15 @@ class Plugin implements PluginInterface
                 currency VARCHAR(8) NOT NULL DEFAULT 'CNY',
                 biz_type VARCHAR(32) NOT NULL DEFAULT 'post',
                 biz_id BIGINT DEFAULT NULL,
+                product_id BIGINT DEFAULT NULL,
+                product_key VARCHAR(128) DEFAULT NULL,
+                product_version INTEGER NOT NULL DEFAULT 0,
+                product_snapshot_json TEXT DEFAULT NULL,
                 user_id BIGINT DEFAULT NULL,
                 guest_token_hash VARCHAR(128) DEFAULT NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                payment_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                fulfillment_status VARCHAR(32) NOT NULL DEFAULT 'none',
                 poll_token_hash VARCHAR(128) DEFAULT NULL,
                 platform_trade_no VARCHAR(128) DEFAULT NULL,
                 pay_url TEXT DEFAULT NULL,
@@ -625,6 +830,7 @@ class Plugin implements PluginInterface
                 updated_at TIMESTAMP NOT NULL
             )",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_orders_idx_biz\" ON {$orders} (biz_type, biz_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_orders_idx_product\" ON {$orders} (product_id, product_key)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_orders_idx_status\" ON {$orders} (status)",
             "CREATE TABLE IF NOT EXISTS {$events} (
                 id BIGSERIAL PRIMARY KEY,
@@ -644,7 +850,8 @@ class Plugin implements PluginInterface
             "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_events_uniq_provider_event\" ON {$events} (gateway, provider_event_id)",
             "CREATE TABLE IF NOT EXISTS {$entitlements} (
                 id BIGSERIAL PRIMARY KEY,
-                order_id BIGINT NOT NULL UNIQUE,
+                order_id BIGINT NOT NULL,
+                deliverable_id BIGINT NOT NULL DEFAULT 0,
                 biz_type VARCHAR(32) NOT NULL,
                 biz_id BIGINT NOT NULL,
                 user_id BIGINT DEFAULT NULL,
@@ -653,8 +860,85 @@ class Plugin implements PluginInterface
                 expires_at TIMESTAMP DEFAULT NULL,
                 created_at TIMESTAMP NOT NULL
             )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_uniq_order_deliverable\" ON {$entitlements} (order_id, deliverable_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_user_access\" ON {$entitlements} (user_id, biz_type, biz_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_entitlements_idx_guest_access\" ON {$entitlements} (guest_token_hash, biz_type, biz_id)",
+            "CREATE TABLE IF NOT EXISTS {$products} (
+                id BIGSERIAL PRIMARY KEY,
+                product_key VARCHAR(128) NOT NULL UNIQUE,
+                title VARCHAR(255) NOT NULL,
+                content_id BIGINT DEFAULT NULL,
+                amount BIGINT NOT NULL,
+                currency VARCHAR(8) NOT NULL DEFAULT 'CNY',
+                status VARCHAR(32) NOT NULL DEFAULT 'active',
+                allow_guest SMALLINT NOT NULL DEFAULT 1,
+                purchase_policy VARCHAR(32) NOT NULL DEFAULT 'once',
+                max_per_user INTEGER DEFAULT NULL,
+                duration_seconds BIGINT DEFAULT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
+                stock_policy VARCHAR(32) NOT NULL DEFAULT 'none',
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_content\" ON {$products} (content_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_status\" ON {$products} (status)",
+            "CREATE TABLE IF NOT EXISTS {$deliverables} (
+                id BIGSERIAL PRIMARY KEY,
+                product_id BIGINT NOT NULL,
+                handler VARCHAR(64) NOT NULL,
+                target_type VARCHAR(64) DEFAULT NULL,
+                target_id BIGINT DEFAULT NULL,
+                target_key VARCHAR(128) DEFAULT NULL,
+                config_json TEXT DEFAULT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                enabled SMALLINT NOT NULL DEFAULT 1
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_product_deliverables_idx_product\" ON {$deliverables} (product_id, enabled, sort_order)",
+            "CREATE TABLE IF NOT EXISTS {$fulfillments} (
+                id BIGSERIAL PRIMARY KEY,
+                order_id BIGINT NOT NULL,
+                deliverable_id BIGINT NOT NULL DEFAULT 0,
+                handler VARCHAR(64) NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                card_item_id BIGINT DEFAULT NULL,
+                result_json TEXT DEFAULT NULL,
+                last_error TEXT DEFAULT NULL,
+                started_at TIMESTAMP DEFAULT NULL,
+                fulfilled_at TIMESTAMP DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_fulfillments_uniq_order_deliverable\" ON {$fulfillments} (order_id, deliverable_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_fulfillments_idx_status\" ON {$fulfillments} (status)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_fulfillments_idx_card_item\" ON {$fulfillments} (card_item_id)",
+            "CREATE TABLE IF NOT EXISTS {$cardBatches} (
+                id BIGSERIAL PRIMARY KEY,
+                product_id BIGINT NOT NULL,
+                batch_name VARCHAR(128) NOT NULL,
+                imported_count INTEGER NOT NULL DEFAULT 0,
+                imported_by BIGINT DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_batches_idx_product\" ON {$cardBatches} (product_id)",
+            "CREATE TABLE IF NOT EXISTS {$cardItems} (
+                id BIGSERIAL PRIMARY KEY,
+                product_id BIGINT NOT NULL,
+                batch_id BIGINT DEFAULT NULL,
+                code_ciphertext TEXT NOT NULL,
+                secret_ciphertext TEXT DEFAULT NULL,
+                fingerprint VARCHAR(128) NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'available',
+                reserved_order_id BIGINT DEFAULT NULL,
+                reserved_until TIMESTAMP DEFAULT NULL,
+                delivered_order_id BIGINT DEFAULT NULL,
+                delivered_at TIMESTAMP DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_uniq_product_fingerprint\" ON {$cardItems} (product_id, fingerprint)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_product_status\" ON {$cardItems} (product_id, status)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_reserved_until\" ON {$cardItems} (reserved_until)",
             "CREATE TABLE IF NOT EXISTS {$nonces} (
                 id BIGSERIAL PRIMARY KEY,
                 nonce_hash VARCHAR(64) NOT NULL UNIQUE,
@@ -672,7 +956,10 @@ class Plugin implements PluginInterface
         $isPgsql = strpos($adapter, 'pgsql') !== false;
         $ordersTable = $isMysql ? '`' . $prefix . 'pay_orders`' : '"' . $prefix . 'pay_orders"';
         $eventsTable = $isMysql ? '`' . $prefix . 'pay_events`' : '"' . $prefix . 'pay_events"';
+        $entitlementsTable = $isMysql ? '`' . $prefix . 'pay_entitlements`' : '"' . $prefix . 'pay_entitlements"';
         $index = $isMysql ? $prefix . 'pay_events_uniq_provider_event' : '"' . $prefix . 'pay_events_uniq_provider_event"';
+        $orderProductIndex = $isMysql ? 'idx_product' : '"' . $prefix . 'pay_orders_idx_product"';
+        $entitlementUniqueIndex = $isMysql ? 'uniq_order_deliverable' : '"' . $prefix . 'pay_entitlements_uniq_order_deliverable"';
         $textType = $isMysql ? 'MEDIUMTEXT' : 'TEXT';
         $string128 = $isMysql || $isPgsql ? 'VARCHAR(128)' : 'TEXT';
         $string64 = $isMysql || $isPgsql ? 'VARCHAR(64)' : 'TEXT';
@@ -683,9 +970,21 @@ class Plugin implements PluginInterface
             "last_queried_at {$dateType} DEFAULT NULL",
             "query_count INTEGER NOT NULL DEFAULT 0",
             "poll_token_hash {$string128} DEFAULT NULL",
+            "product_id BIGINT DEFAULT NULL",
+            "product_key {$string128} DEFAULT NULL",
+            "product_version INTEGER NOT NULL DEFAULT 0",
+            "product_snapshot_json {$textType} DEFAULT NULL",
+            "payment_status {$string64} NOT NULL DEFAULT 'pending'",
+            "fulfillment_status {$string64} NOT NULL DEFAULT 'none'",
         ];
         foreach ($orderColumns as $column) {
             self::trySchema($db, "ALTER TABLE {$ordersTable} ADD COLUMN {$column}");
+        }
+
+        if ($isMysql) {
+            self::trySchema($db, "ALTER TABLE {$ordersTable} ADD KEY `{$orderProductIndex}` (product_id, product_key)");
+        } else {
+            self::trySchema($db, "CREATE INDEX {$orderProductIndex} ON {$ordersTable} (product_id, product_key)");
         }
 
         $eventColumns = [
@@ -704,6 +1003,51 @@ class Plugin implements PluginInterface
             self::trySchema($db, "ALTER TABLE {$eventsTable} ADD UNIQUE KEY `{$index}` (gateway, provider_event_id)");
         } else {
             self::trySchema($db, "CREATE UNIQUE INDEX {$index} ON {$eventsTable} (gateway, provider_event_id)");
+        }
+
+        self::trySchema($db, "ALTER TABLE {$entitlementsTable} ADD COLUMN deliverable_id BIGINT NOT NULL DEFAULT 0");
+        if ($isMysql) {
+            self::trySchema($db, "ALTER TABLE {$entitlementsTable} DROP INDEX `uniq_order`");
+            self::trySchema($db, "ALTER TABLE {$entitlementsTable} ADD UNIQUE KEY `{$entitlementUniqueIndex}` (order_id, deliverable_id)");
+        } elseif ($isPgsql) {
+            self::trySchema($db, "ALTER TABLE {$entitlementsTable} DROP CONSTRAINT \"{$prefix}pay_entitlements_order_id_key\"");
+            self::trySchema($db, "CREATE UNIQUE INDEX {$entitlementUniqueIndex} ON {$entitlementsTable} (order_id, deliverable_id)");
+        } else {
+            self::trySchema($db, "CREATE UNIQUE INDEX {$entitlementUniqueIndex} ON {$entitlementsTable} (order_id, deliverable_id)");
+        }
+    }
+
+    private static function schemaVersion(Db $db): int
+    {
+        try {
+            $row = $db->fetchRow(
+                $db->select('value')->from('table.options')
+                    ->where('name = ?', 'typechopay_schema_version')
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+            return isset($row['value']) ? (int) $row['value'] : 0;
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
+    private static function setSchemaVersion(Db $db, int $version): void
+    {
+        try {
+            $updated = $db->query($db->update('table.options')->rows([
+                'value' => (string) $version,
+            ])->where('name = ?', 'typechopay_schema_version')->where('user = ?', 0));
+
+            if ($updated <= 0) {
+                $db->query($db->insert('table.options')->rows([
+                    'name' => 'typechopay_schema_version',
+                    'user' => 0,
+                    'value' => (string) $version,
+                ]));
+            }
+        } catch (\Throwable $e) {
+            error_log('[TypechoPay] Failed to store schema version: ' . $e->getMessage());
         }
     }
 
