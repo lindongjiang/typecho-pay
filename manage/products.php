@@ -9,6 +9,17 @@ if (!defined('__TYPECHO_ADMIN__')) {
     exit;
 }
 
+$_typechoPayDebugHandler = function ($e) {
+    echo '<div style="max-width:800px;margin:40px auto;padding:20px;background:#fff3f3;border:2px solid red;font-family:monospace;">';
+    echo '<h2 style="color:red;">TypechoPay Debug</h2>';
+    echo '<p><b>' . htmlspecialchars(get_class($e)) . ':</b> ' . htmlspecialchars($e->getMessage()) . '</p>';
+    echo '<p>' . htmlspecialchars($e->getFile()) . ':' . (int) $e->getLine() . '</p>';
+    echo '<pre style="font-size:12px;overflow:auto;max-height:400px;">' . htmlspecialchars($e->getTraceAsString()) . '</pre>';
+    echo '</div>';
+    exit;
+};
+set_exception_handler($_typechoPayDebugHandler);
+
 $db = Db::get();
 $cardService = new CardCodeService($db);
 $panelUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fproducts.php';
