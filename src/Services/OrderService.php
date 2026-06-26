@@ -16,6 +16,8 @@ final class OrderService
     private const PAYABLE_STATUSES = ['pending', 'processing'];
     private const GRANTABLE_STATUSES = ['paid_pending_grant', 'grant_failed'];
     private const ACTIVE_QUERY_INTERVAL = 8;
+    private const RATE_LIMIT_WINDOW = 60;
+    private const RATE_LIMIT_MAX_PREPARES = 10;
     private const FINAL_PROVIDER_STATUSES = [
         'expired' => 'expired',
         'cancelled' => 'cancelled',
@@ -34,9 +36,112 @@ final class OrderService
         $this->db = $db;
     }
 
+    /**
+     * Create or reuse an order. When a pending/processing order already exists
+     * for the same buyer + product + gateway, reuse it instead of creating a new one.
+     */
     public function create(array $input, ?int $userId = null, ?string $guestTokenHash = null): array
     {
+        $productId = isset($input['product_id']) ? (int) $input['product_id'] : null;
+        $gateway = (string) ($input['gateway'] ?? '');
+
+        if ($productId !== null && $productId > 0 && $gateway !== '') {
+            $existing = $this->findActiveOrderForBuyer($userId, $guestTokenHash, $productId, $gateway);
+            if ($existing) {
+                $existing['poll_token'] = $this->makePollToken();
+                $this->db->query($this->db->update('table.pay_orders')->rows([
+                    'poll_token_hash' => hash('sha256', $existing['poll_token']),
+                    'return_token_hash' => null,
+                    'delivery_token_hash' => null,
+                    'return_token_used' => 0,
+                    'expired_at' => date('Y-m-d H:i:s', time() + 1800),
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ])->where('id = ?', (int) $existing['id']));
+                $existing['return_token'] = null;
+                $existing['delivery_token'] = null;
+                return $existing;
+            }
+        }
+
         return $this->createFresh($input, $userId, $guestTokenHash);
+    }
+
+    /**
+     * Rate-limit prepare requests by IP address. Throws on excess.
+     */
+    public function assertRateLimit(string $ip): void
+    {
+        if ($ip === '') {
+            return;
+        }
+
+        $scope = 'prepare:' . $ip;
+        $hash = hash('sha256', $scope);
+        $now = date('Y-m-d H:i:s');
+        $expires = date('Y-m-d H:i:s', time() + self::RATE_LIMIT_WINDOW);
+
+        try {
+            $this->db->query($this->db->insert('table.pay_nonces')->rows([
+                'nonce_hash' => $hash . ':' . bin2hex(random_bytes(4)),
+                'scope' => $scope,
+                'expires_at' => $expires,
+                'created_at' => $now,
+            ]));
+        } catch (\Throwable $e) {
+            // Ignore insert failure for rate limiting
+        }
+
+        $cutoff = date('Y-m-d H:i:s', time() - self::RATE_LIMIT_WINDOW);
+        $table = $this->quotedTable('pay_nonces');
+        $count = 0;
+        try {
+            $row = $this->db->fetchRow(
+                "SELECT COUNT(*) AS cnt FROM {$table} WHERE scope = '" . $this->db->quoteValue($scope) . "' AND created_at >= '" . $this->db->quoteValue($cutoff) . "'"
+            );
+            $count = (int) ($row['cnt'] ?? 0);
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        if ($count > self::RATE_LIMIT_MAX_PREPARES) {
+            throw new \InvalidArgumentException('Too many requests. Please try again later.');
+        }
+    }
+
+    /**
+     * Clean up expired rate-limit records.
+     */
+    public function cleanupRateLimits(): void
+    {
+        $cutoff = date('Y-m-d H:i:s', time() - self::RATE_LIMIT_WINDOW * 2);
+        try {
+            $this->db->query($this->db->delete('table.pay_nonces')->where('scope LIKE ?', 'prepare:%')->where('created_at < ?', $cutoff));
+        } catch (\Throwable $e) {
+            // Best effort
+        }
+    }
+
+    public function findActiveOrderForBuyer(?int $userId, ?string $guestTokenHash, int $productId, string $gateway): ?array
+    {
+        if ($userId === null && ($guestTokenHash === null || $guestTokenHash === '')) {
+            return null;
+        }
+
+        $select = $this->db->select()->from('table.pay_orders')
+            ->where('product_id = ?', $productId)
+            ->where('gateway = ?', $gateway)
+            ->where('status IN ?', self::PAYABLE_STATUSES)
+            ->order('id', Db::SORT_DESC)
+            ->limit(1);
+
+        if ($userId !== null) {
+            $select->where('user_id = ?', $userId);
+        } else {
+            $select->where('guest_token_hash = ?', $guestTokenHash)
+                ->where('user_id IS NULL');
+        }
+
+        return $this->db->fetchRow($select) ?: null;
     }
 
     private function createFresh(array $input, ?int $userId, ?string $guestTokenHash): array
@@ -51,7 +156,9 @@ final class OrderService
         }
         $bizType = $this->assertBizType((string) ($input['biz_type'] ?? 'post'));
         $bizId = $this->assertBizId($input['biz_id'] ?? null);
-        $pollToken = $this->makePollToken();
+        $pollToken = $this->makeToken();
+        $returnToken = $this->makeToken();
+        $deliveryToken = $this->makeToken();
 
         $order = [
             'out_trade_no' => $this->makeTradeNo(),
@@ -71,6 +178,9 @@ final class OrderService
             'payment_status' => 'pending',
             'fulfillment_status' => 'none',
             'poll_token_hash' => hash('sha256', $pollToken),
+            'return_token_hash' => hash('sha256', $returnToken),
+            'delivery_token_hash' => hash('sha256', $deliveryToken),
+            'return_token_used' => 0,
             'platform_trade_no' => null,
             'pay_url' => null,
             'qr_content' => null,
@@ -86,6 +196,8 @@ final class OrderService
         $id = $this->db->query($this->db->insert('table.pay_orders')->rows($order));
         $order['id'] = $id;
         $order['poll_token'] = $pollToken;
+        $order['return_token'] = $returnToken;
+        $order['delivery_token'] = $deliveryToken;
 
         return $order;
     }
@@ -272,9 +384,10 @@ final class OrderService
         }
 
         $this->assertResultMatchesOrder($order, $result);
-        (new FulfillmentManager($this->db))->releaseOrder($order);
 
-        $this->db->query($this->db->update('table.pay_orders')->rows([
+        // First, try to transition the order to the terminal state.
+        // Only release card reservations if the transition succeeds.
+        $updated = $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => $normalized,
             'payment_status' => $normalized,
             'fulfillment_status' => 'none',
@@ -282,6 +395,11 @@ final class OrderService
             'updated_at' => date('Y-m-d H:i:s'),
         ])->where('out_trade_no = ?', $result->outTradeNo)
             ->where('status IN ?', self::PAYABLE_STATUSES));
+
+        if ($updated > 0) {
+            // Status was still pending/processing — safe to release.
+            (new FulfillmentManager($this->db))->releaseOrder($order);
+        }
 
         return $this->findByOutTradeNo($result->outTradeNo) ?: array_merge($order, ['status' => $normalized]);
     }
@@ -378,6 +496,52 @@ final class OrderService
         return $hash !== '' && hash_equals($hash, hash('sha256', $pollToken));
     }
 
+    /**
+     * Verify a return token (one-time use, for payment platform redirect).
+     * Returns true only if the token is valid and has not been used yet.
+     */
+    public function verifyReturnToken(array $order, string $returnToken): bool
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $returnToken)) {
+            return false;
+        }
+
+        if (!empty($order['return_token_used'])) {
+            return false;
+        }
+
+        $hash = (string) ($order['return_token_hash'] ?? '');
+        return $hash !== '' && hash_equals($hash, hash('sha256', $returnToken));
+    }
+
+    /**
+     * Mark a return token as used so it cannot be reused.
+     */
+    public function markReturnTokenUsed(string $outTradeNo): void
+    {
+        if (!$this->isValidTradeNo($outTradeNo)) {
+            return;
+        }
+
+        $this->db->query($this->db->update('table.pay_orders')->rows([
+            'return_token_used' => 1,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ])->where('out_trade_no = ?', $outTradeNo));
+    }
+
+    /**
+     * Verify a delivery token (long-lived, for revisiting card delivery page).
+     */
+    public function verifyDeliveryToken(array $order, string $deliveryToken): bool
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $deliveryToken)) {
+            return false;
+        }
+
+        $hash = (string) ($order['delivery_token_hash'] ?? '');
+        return $hash !== '' && hash_equals($hash, hash('sha256', $deliveryToken));
+    }
+
     public function belongsToOwner(array $order, ?int $userId, ?string $guestTokenHash): bool
     {
         if ($userId !== null && isset($order['user_id']) && (int) $order['user_id'] === $userId) {
@@ -400,9 +564,20 @@ final class OrderService
         return (bool) preg_match('/^[A-Za-z0-9_-]{8,64}$/', $outTradeNo);
     }
 
-    private function makePollToken(): string
+    private function makeToken(): string
     {
         return bin2hex(random_bytes(32));
+    }
+
+    private function quotedTable(string $table): string
+    {
+        $prefix = $this->db->getPrefix();
+        $adapter = strtolower($this->db->getAdapterName());
+        if (strpos($adapter, 'mysql') !== false || strpos($adapter, 'mysqli') !== false) {
+            return '`' . str_replace('`', '``', $prefix . $table) . '`';
+        }
+
+        return '"' . str_replace('"', '""', $prefix . $table) . '"';
     }
 
     private function assertBizType(string $bizType): string

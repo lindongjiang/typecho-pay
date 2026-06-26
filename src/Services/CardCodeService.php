@@ -27,52 +27,86 @@ final class CardCodeService
             throw new \InvalidArgumentException('Invalid product id.');
         }
 
+        $batchName = trim($batchName);
+        if ($batchName !== '' && mb_strlen($batchName) > 128) {
+            throw new \InvalidArgumentException('Batch name is too long (max 128 characters).');
+        }
+
         $items = $this->parseLines($rawLines);
         if (!$items) {
             throw new \InvalidArgumentException('No card codes to import.');
         }
 
-        $now = date('Y-m-d H:i:s');
-        $batchId = $this->db->query($this->db->insert('table.pay_card_batches')->rows([
-            'product_id' => $productId,
-            'batch_name' => $batchName !== '' ? $batchName : 'batch-' . date('YmdHis'),
-            'imported_count' => 0,
-            'imported_by' => $importedBy,
-            'created_at' => $now,
-        ]));
-
-        $imported = 0;
-        $duplicates = 0;
-        foreach ($items as $item) {
-            $fingerprint = $this->fingerprint($productId, $item['code'], $item['secret']);
-            $codeCiphertext = CardCodeCipher::encrypt($item['code'], $this->keyMaterial());
-            $secretCiphertext = $item['secret'] !== null
-                ? CardCodeCipher::encrypt($item['secret'], $this->keyMaterial())
-                : null;
-            try {
-                $this->db->query($this->db->insert('table.pay_card_items')->rows([
-                    'product_id' => $productId,
-                    'batch_id' => (int) $batchId,
-                    'code_ciphertext' => $codeCiphertext,
-                    'secret_ciphertext' => $secretCiphertext,
-                    'fingerprint' => $fingerprint,
-                    'status' => 'available',
-                    'reserved_order_id' => null,
-                    'reserved_until' => null,
-                    'delivered_order_id' => null,
-                    'delivered_at' => null,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]));
-                $imported++;
-            } catch (\Throwable $e) {
-                $duplicates++;
-            }
+        if (count($items) > 10000) {
+            throw new \InvalidArgumentException('Too many card codes in a single import (max 10,000).');
         }
 
-        $this->db->query($this->db->update('table.pay_card_batches')->rows([
-            'imported_count' => $imported,
-        ])->where('id = ?', (int) $batchId));
+        $now = date('Y-m-d H:i:s');
+        $keyMaterial = $this->keyMaterial();
+        $imported = 0;
+        $duplicates = 0;
+
+        $this->db->query('START TRANSACTION', Db::WRITE, '');
+
+        try {
+            $batchId = $this->db->query($this->db->insert('table.pay_card_batches')->rows([
+                'product_id' => $productId,
+                'batch_name' => $batchName !== '' ? $batchName : 'batch-' . date('YmdHis'),
+                'imported_count' => 0,
+                'imported_by' => $importedBy,
+                'created_at' => $now,
+            ]));
+
+            foreach ($items as $item) {
+                $fingerprint = $this->fingerprint($productId, $item['code'], $item['secret']);
+                $codeCiphertext = CardCodeCipher::encrypt($item['code'], $keyMaterial);
+                $secretCiphertext = $item['secret'] !== null
+                    ? CardCodeCipher::encrypt($item['secret'], $keyMaterial)
+                    : null;
+                try {
+                    $this->db->query($this->db->insert('table.pay_card_items')->rows([
+                        'product_id' => $productId,
+                        'batch_id' => (int) $batchId,
+                        'code_ciphertext' => $codeCiphertext,
+                        'secret_ciphertext' => $secretCiphertext,
+                        'fingerprint' => $fingerprint,
+                        'status' => 'available',
+                        'reserved_order_id' => null,
+                        'reserved_until' => null,
+                        'delivered_order_id' => null,
+                        'delivered_at' => null,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]));
+                    $imported++;
+                } catch (\Throwable $e) {
+                    $msg = strtolower($e->getMessage());
+                    // Only treat unique constraint violations as duplicates.
+                    // MySQL: 1062, SQLite: UNIQUE constraint failed, PostgreSQL: unique_violation
+                    if (strpos($msg, '1062') !== false
+                        || strpos($msg, 'unique') !== false
+                        || strpos($msg, 'duplicate') !== false) {
+                        $duplicates++;
+                        continue;
+                    }
+                    // Any other database error is fatal — rethrow to trigger rollback.
+                    throw $e;
+                }
+            }
+
+            $this->db->query($this->db->update('table.pay_card_batches')->rows([
+                'imported_count' => $imported,
+            ])->where('id = ?', (int) $batchId));
+
+            $this->db->query('COMMIT', Db::WRITE, '');
+        } catch (\Throwable $e) {
+            try {
+                $this->db->query('ROLLBACK', Db::WRITE, '');
+            } catch (\Throwable $rb) {
+                error_log('[TypechoPay] Import rollback failed: ' . $rb->getMessage());
+            }
+            throw $e;
+        }
 
         return [
             'batch_id' => (int) $batchId,
@@ -92,13 +126,15 @@ final class CardCodeService
 
         $this->releaseExpiredReservations($productId);
 
-        $existing = $this->findOrderCard($productId, $orderId, ['reserved', 'delivered']);
-        if ($existing) {
-            return $existing;
-        }
-
         $reservedUntil = date('Y-m-d H:i:s', time() + self::RESERVATION_TTL);
         for ($attempt = 0; $attempt < 5; $attempt++) {
+            // Re-check on every attempt: another concurrent request may have
+            // already reserved a card for this order.
+            $existing = $this->findOrderCard($productId, $orderId, ['reserved', 'delivered']);
+            if ($existing) {
+                return $existing;
+            }
+
             $candidate = $this->db->fetchRow(
                 $this->db->select()->from('table.pay_card_items')
                     ->where('product_id = ?', $productId)
@@ -108,6 +144,11 @@ final class CardCodeService
             );
 
             if (!$candidate) {
+                // Before declaring out of stock, check if another request just reserved for us.
+                $existing = $this->findOrderCard($productId, $orderId, ['reserved', 'delivered']);
+                if ($existing) {
+                    return $existing;
+                }
                 throw new \InvalidArgumentException('Card code is out of stock.');
             }
 
@@ -122,6 +163,12 @@ final class CardCodeService
             if ($updated > 0) {
                 return $this->findById((int) $candidate['id']);
             }
+        }
+
+        // Final check before giving up.
+        $existing = $this->findOrderCard($productId, $orderId, ['reserved', 'delivered']);
+        if ($existing) {
+            return $existing;
         }
 
         throw new \RuntimeException('Failed to reserve card code.');
@@ -316,11 +363,28 @@ final class CardCodeService
                     throw new \InvalidArgumentException('Card code line contains empty code.');
                 }
 
+                $this->assertCodeLength($code, $secret);
                 return [$code, $secret !== '' ? $secret : null];
             }
         }
 
+        $this->assertCodeLength($line, null);
         return [$line, null];
+    }
+
+    private function assertCodeLength(string $code, ?string $secret): void
+    {
+        $codeLen = function_exists('mb_strlen') ? mb_strlen($code) : strlen($code);
+        if ($codeLen > 4096) {
+            throw new \InvalidArgumentException('Card code is too long (max 4096 characters).');
+        }
+
+        if ($secret !== null && $secret !== '') {
+            $secretLen = function_exists('mb_strlen') ? mb_strlen($secret) : strlen($secret);
+            if ($secretLen > 4096) {
+                throw new \InvalidArgumentException('Card secret is too long (max 4096 characters).');
+            }
+        }
     }
 
     private function decryptRow(array $row): array

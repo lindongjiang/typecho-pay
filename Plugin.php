@@ -14,6 +14,7 @@ use Typecho\Widget\Helper\Form\Element\Textarea;
 use TypechoPlugin\TypechoPay\Services\AccessService;
 use TypechoPlugin\TypechoPay\Services\GuestClaimService;
 use TypechoPlugin\TypechoPay\Services\ProductService;
+use TypechoPlugin\TypechoPay\Services\PurchasePolicyService;
 use TypechoPlugin\TypechoPay\Support\GuestToken;
 use Utils\Helper;
 use Widget\Options;
@@ -61,7 +62,7 @@ class Plugin implements PluginInterface
     private const ORDERS_PANEL = 'TypechoPay/manage/orders.php';
     private const PRODUCTS_PANEL = 'TypechoPay/manage/products.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
-    private const SCHEMA_VERSION = 4;
+    private const SCHEMA_VERSION = 5;
 
     /**
      * 启用插件。
@@ -248,7 +249,7 @@ class Plugin implements PluginInterface
             }
 
             if (($product['purchase_policy'] ?? 'once') === 'once'
-                && self::currentVisitorCanAccess((string) $product['biz_type'], (int) $product['biz_id'])) {
+                && self::currentVisitorHasPurchased($product)) {
                 return '<div class="typechopay-owned">' . htmlspecialchars(_t('已购买')) . '</div>';
             }
 
@@ -375,6 +376,28 @@ class Plugin implements PluginInterface
         return (new AccessService(Db::get()))->canAccess($bizType, $bizId, $userId, $guestTokenHash);
     }
 
+    /**
+     * Check if the current visitor has already purchased this product
+     * (based on paid order history, not content access).
+     */
+    private static function currentVisitorHasPurchased(array $product): bool
+    {
+        $productId = (int) ($product['product_id'] ?? ($product['snapshot']['id'] ?? 0));
+        if ($productId <= 0) {
+            // Legacy inline products: fall back to content-based check.
+            return self::currentVisitorCanAccess((string) $product['biz_type'], (int) $product['biz_id']);
+        }
+
+        $user = User::alloc();
+        $userId = $user->hasLogin() ? (int) $user->uid : null;
+        $guestTokenHash = GuestToken::hash(GuestToken::get());
+        if ($userId !== null && $guestTokenHash !== null) {
+            (new GuestClaimService(Db::get()))->claimAll($userId, $guestTokenHash);
+        }
+
+        return (new PurchasePolicyService(Db::get()))->hasPurchased($productId, $userId, $guestTokenHash);
+    }
+
     private static function archiveReturnTo($archive, Options $options): string
     {
         $permalink = $archive->permalink ?? '';
@@ -432,7 +455,33 @@ class Plugin implements PluginInterface
 
         if ($schemaVersion < self::SCHEMA_VERSION) {
             self::migrateExistingTables($db, $adapter, $prefix);
-            self::setSchemaVersion($db, self::SCHEMA_VERSION);
+            // Only set the version if the core tables are usable.
+            // This prevents a partial migration from being marked as complete.
+            if (self::tablesAreUsable($db, $prefix)) {
+                self::setSchemaVersion($db, self::SCHEMA_VERSION);
+            } else {
+                error_log('[TypechoPay] Schema migration incomplete — will retry on next activation.');
+            }
+        }
+    }
+
+    /**
+     * Verify that critical tables and columns exist after migration.
+     */
+    private static function tablesAreUsable(Db $db, string $prefix): bool
+    {
+        try {
+            // Check that pay_orders has the payment_status column (introduced in v2).
+            $db->fetchRow(
+                $db->select('payment_status')->from('table.pay_orders')->limit(1)
+            );
+            // Check that pay_card_items table is accessible.
+            $db->fetchRow(
+                $db->select('status')->from('table.pay_card_items')->limit(1)
+            );
+            return true;
+        } catch (\Throwable $e) {
+            return false;
         }
     }
 
@@ -481,6 +530,9 @@ class Plugin implements PluginInterface
                 `payment_status` VARCHAR(32) NOT NULL DEFAULT 'pending',
                 `fulfillment_status` VARCHAR(32) NOT NULL DEFAULT 'none',
                 `poll_token_hash` VARCHAR(128) DEFAULT NULL,
+                `return_token_hash` VARCHAR(128) DEFAULT NULL,
+                `delivery_token_hash` VARCHAR(128) DEFAULT NULL,
+                `return_token_used` TINYINT(1) NOT NULL DEFAULT 0,
                 `platform_trade_no` VARCHAR(128) DEFAULT NULL,
                 `pay_url` TEXT DEFAULT NULL,
                 `qr_content` TEXT DEFAULT NULL,
@@ -609,6 +661,7 @@ class Plugin implements PluginInterface
                 `updated_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_product_fingerprint` (`product_id`, `fingerprint`),
+                UNIQUE KEY `uniq_reserved_order` (`reserved_order_id`),
                 KEY `idx_product_status` (`product_id`, `status`),
                 KEY `idx_reserved_until` (`reserved_until`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -657,6 +710,9 @@ class Plugin implements PluginInterface
                 payment_status TEXT NOT NULL DEFAULT 'pending',
                 fulfillment_status TEXT NOT NULL DEFAULT 'none',
                 poll_token_hash TEXT DEFAULT NULL,
+                return_token_hash TEXT DEFAULT NULL,
+                delivery_token_hash TEXT DEFAULT NULL,
+                return_token_used INTEGER NOT NULL DEFAULT 0,
                 platform_trade_no TEXT DEFAULT NULL,
                 pay_url TEXT DEFAULT NULL,
                 qr_content TEXT DEFAULT NULL,
@@ -776,6 +832,7 @@ class Plugin implements PluginInterface
                 updated_at TEXT NOT NULL
             )",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_uniq_product_fingerprint\" ON {$cardItems} (product_id, fingerprint)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_uniq_reserved_order\" ON {$cardItems} (reserved_order_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_product_status\" ON {$cardItems} (product_id, status)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_reserved_until\" ON {$cardItems} (reserved_until)",
             "CREATE TABLE IF NOT EXISTS {$nonces} (
@@ -821,6 +878,9 @@ class Plugin implements PluginInterface
                 payment_status VARCHAR(32) NOT NULL DEFAULT 'pending',
                 fulfillment_status VARCHAR(32) NOT NULL DEFAULT 'none',
                 poll_token_hash VARCHAR(128) DEFAULT NULL,
+                return_token_hash VARCHAR(128) DEFAULT NULL,
+                delivery_token_hash VARCHAR(128) DEFAULT NULL,
+                return_token_used SMALLINT NOT NULL DEFAULT 0,
                 platform_trade_no VARCHAR(128) DEFAULT NULL,
                 pay_url TEXT DEFAULT NULL,
                 qr_content TEXT DEFAULT NULL,
@@ -940,6 +1000,7 @@ class Plugin implements PluginInterface
                 updated_at TIMESTAMP NOT NULL
             )",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_uniq_product_fingerprint\" ON {$cardItems} (product_id, fingerprint)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_uniq_reserved_order\" ON {$cardItems} (reserved_order_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_product_status\" ON {$cardItems} (product_id, status)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_card_items_idx_reserved_until\" ON {$cardItems} (reserved_until)",
             "CREATE TABLE IF NOT EXISTS {$nonces} (
@@ -960,14 +1021,18 @@ class Plugin implements PluginInterface
         $ordersTable = $isMysql ? '`' . $prefix . 'pay_orders`' : '"' . $prefix . 'pay_orders"';
         $eventsTable = $isMysql ? '`' . $prefix . 'pay_events`' : '"' . $prefix . 'pay_events"';
         $entitlementsTable = $isMysql ? '`' . $prefix . 'pay_entitlements`' : '"' . $prefix . 'pay_entitlements"';
+        $cardItemsTable = $isMysql ? '`' . $prefix . 'pay_card_items`' : '"' . $prefix . 'pay_card_items"';
         $index = $isMysql ? $prefix . 'pay_events_uniq_provider_event' : '"' . $prefix . 'pay_events_uniq_provider_event"';
         $orderProductIndex = $isMysql ? 'idx_product' : '"' . $prefix . 'pay_orders_idx_product"';
         $entitlementUniqueIndex = $isMysql ? 'uniq_order_deliverable' : '"' . $prefix . 'pay_entitlements_uniq_order_deliverable"';
+        $reservedOrderIndex = $isMysql ? 'uniq_reserved_order' : '"' . $prefix . 'pay_card_items_uniq_reserved_order"';
         $textType = $isMysql ? 'MEDIUMTEXT' : 'TEXT';
         $string128 = $isMysql || $isPgsql ? 'VARCHAR(128)' : 'TEXT';
         $string64 = $isMysql || $isPgsql ? 'VARCHAR(64)' : 'TEXT';
         $dateType = $isMysql ? 'DATETIME' : ($isPgsql ? 'TIMESTAMP' : 'TEXT');
+        $boolDefault = $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : ($isPgsql ? 'SMALLINT NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0');
 
+        // v1-v3 columns
         $orderColumns = [
             "return_to {$textType} DEFAULT NULL",
             "last_queried_at {$dateType} DEFAULT NULL",
@@ -980,6 +1045,11 @@ class Plugin implements PluginInterface
             "payment_status {$string64} NOT NULL DEFAULT 'pending'",
             "fulfillment_status {$string64} NOT NULL DEFAULT 'none'",
         ];
+        // v5 columns: token separation
+        $orderColumns[] = "return_token_hash {$string128} DEFAULT NULL";
+        $orderColumns[] = "delivery_token_hash {$string128} DEFAULT NULL";
+        $orderColumns[] = "return_token_used {$boolDefault}";
+
         foreach ($orderColumns as $column) {
             self::trySchema($db, "ALTER TABLE {$ordersTable} ADD COLUMN {$column}");
         }
@@ -989,6 +1059,12 @@ class Plugin implements PluginInterface
         } else {
             self::trySchema($db, "CREATE INDEX {$orderProductIndex} ON {$ordersTable} (product_id, product_key)");
         }
+
+        // Backfill old order statuses. Paid orders without the new columns should
+        // have correct payment_status and fulfillment_status.
+        self::trySchema($db, "UPDATE {$ordersTable} SET payment_status = 'paid', fulfillment_status = 'fulfilled' WHERE status = 'paid' AND (payment_status = 'pending' OR payment_status = 'processing')");
+        self::trySchema($db, "UPDATE {$ordersTable} SET payment_status = 'paid', fulfillment_status = 'pending' WHERE status = 'paid_pending_grant' AND (payment_status = 'pending' OR payment_status = 'processing')");
+        self::trySchema($db, "UPDATE {$ordersTable} SET payment_status = 'paid', fulfillment_status = 'failed' WHERE status = 'grant_failed' AND (payment_status = 'pending' OR payment_status = 'processing')");
 
         $eventColumns = [
             "provider_event_id {$string128} DEFAULT NULL",
@@ -1017,6 +1093,18 @@ class Plugin implements PluginInterface
             self::trySchema($db, "CREATE UNIQUE INDEX {$entitlementUniqueIndex} ON {$entitlementsTable} (order_id, deliverable_id)");
         } else {
             self::trySchema($db, "CREATE UNIQUE INDEX {$entitlementUniqueIndex} ON {$entitlementsTable} (order_id, deliverable_id)");
+        }
+
+        // v5: Add unique constraint on reserved_order_id to prevent one order reserving multiple cards.
+        try {
+            if ($isMysql) {
+                $db->query("ALTER TABLE {$cardItemsTable} ADD UNIQUE KEY `{$reservedOrderIndex}` (reserved_order_id)", Db::WRITE, '');
+            } else {
+                $db->query("CREATE UNIQUE INDEX {$reservedOrderIndex} ON {$cardItemsTable} (reserved_order_id)", Db::WRITE, '');
+            }
+        } catch (\Throwable $e) {
+            // May fail if duplicate reserved_order_id values exist. Log but don't block migration.
+            error_log('[TypechoPay] Could not add unique constraint on reserved_order_id: ' . $e->getMessage());
         }
     }
 

@@ -52,7 +52,7 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         $request->setReturnUrl(
             $this->returnUrl('alipay')
             . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
-            . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? ''))
+            . '&return_token=' . rawurlencode((string) ($order['return_token'] ?? ''))
         );
         $request->setBizContent(json_encode([
             'out_trade_no' => $order['out_trade_no'],

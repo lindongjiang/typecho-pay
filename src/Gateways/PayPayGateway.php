@@ -32,7 +32,7 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
             'requestedAt' => time(),
             'redirectUrl' => $this->returnUrl('paypay')
                 . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
-                . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
+                . '&return_token=' . rawurlencode((string) ($order['return_token'] ?? '')),
             'redirectType' => 'WEB_LINK',
             'isAuthorization' => false,
         ];

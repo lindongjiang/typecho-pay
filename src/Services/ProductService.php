@@ -64,6 +64,28 @@ final class ProductService
         $title = trim((string) ($product['title'] ?? 'TypechoPay Product'));
         $policy = $this->assertPurchasePolicy((string) ($product['purchase_policy'] ?? 'once'));
         $deliverables = $this->findDeliverables((int) $product['id']);
+
+        // Stored products must have at least one enabled deliverable.
+        // Otherwise the product is misconfigured and we should not accept payment.
+        if (!$deliverables) {
+            throw new \InvalidArgumentException('Product has no enabled deliverables. Please configure at least one delivery rule.');
+        }
+
+        // Validate deliverable configuration.
+        $allowedHandlers = ['post_access', 'content_block', 'cardcode'];
+        foreach ($deliverables as $deliverable) {
+            $handler = (string) ($deliverable['handler'] ?? '');
+            if (!in_array($handler, $allowedHandlers, true)) {
+                throw new \InvalidArgumentException('Product has an invalid deliverable handler: ' . $handler);
+            }
+            if (in_array($handler, ['post_access', 'content_block'], true) && empty($deliverable['target_id'])) {
+                throw new \InvalidArgumentException('Product deliverable "' . $handler . '" requires a target post/page.');
+            }
+            if ($handler === 'cardcode' && ($product['stock_policy'] ?? 'none') === 'none') {
+                // Cardcode deliverable without stock policy — warn but allow (stock may be managed externally)
+            }
+        }
+
         [$bizType, $bizId] = $this->resolvePrimaryAccessTarget($product, $deliverables, $defaults);
 
         $snapshot = [
@@ -169,16 +191,12 @@ final class ProductService
 
     private function findDeliverables(int $productId): array
     {
-        try {
-            $rows = $this->db->fetchAll(
-                $this->db->select()->from('table.pay_product_deliverables')
-                    ->where('product_id = ?', $productId)
-                    ->where('enabled = ?', 1)
-                    ->order('sort_order', Db::SORT_ASC)
-            );
-        } catch (\Throwable $e) {
-            return [];
-        }
+        $rows = $this->db->fetchAll(
+            $this->db->select()->from('table.pay_product_deliverables')
+                ->where('product_id = ?', $productId)
+                ->where('enabled = ?', 1)
+                ->order('sort_order', Db::SORT_ASC)
+        );
 
         $deliverables = [];
         foreach ($rows as $row) {

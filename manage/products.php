@@ -51,47 +51,55 @@ if ($request->isPost()) {
             }
 
             $now = date('Y-m-d H:i:s');
-            $productId = $db->query($db->insert('table.pay_products')->rows([
-                'product_key' => $productKey,
-                'title' => $title,
-                'content_id' => $contentId,
-                'amount' => $amount,
-                'currency' => $currency,
-                'status' => 'active',
-                'allow_guest' => 1,
-                'purchase_policy' => $policy,
-                'max_per_user' => null,
-                'duration_seconds' => null,
-                'version' => 1,
-                'stock_policy' => $enableCardcode ? 'reserve_on_order' : 'none',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]));
-
-            if ($enablePostAccess) {
-                $db->query($db->insert('table.pay_product_deliverables')->rows([
-                    'product_id' => (int) $productId,
-                    'handler' => 'post_access',
-                    'target_type' => 'post',
-                    'target_id' => $contentId,
-                    'target_key' => null,
-                    'config_json' => null,
-                    'sort_order' => 10,
-                    'enabled' => 1,
+            $db->query('START TRANSACTION', Db::WRITE, '');
+            try {
+                $productId = $db->query($db->insert('table.pay_products')->rows([
+                    'product_key' => $productKey,
+                    'title' => $title,
+                    'content_id' => $contentId,
+                    'amount' => $amount,
+                    'currency' => $currency,
+                    'status' => 'active',
+                    'allow_guest' => 1,
+                    'purchase_policy' => $policy,
+                    'max_per_user' => null,
+                    'duration_seconds' => null,
+                    'version' => 1,
+                    'stock_policy' => $enableCardcode ? 'reserve_on_order' : 'none',
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ]));
-            }
 
-            if ($enableCardcode) {
-                $db->query($db->insert('table.pay_product_deliverables')->rows([
-                    'product_id' => (int) $productId,
-                    'handler' => 'cardcode',
-                    'target_type' => 'cardcode',
-                    'target_id' => null,
-                    'target_key' => 'default',
-                    'config_json' => null,
-                    'sort_order' => 20,
-                    'enabled' => 1,
-                ]));
+                if ($enablePostAccess) {
+                    $db->query($db->insert('table.pay_product_deliverables')->rows([
+                        'product_id' => (int) $productId,
+                        'handler' => 'post_access',
+                        'target_type' => 'post',
+                        'target_id' => $contentId,
+                        'target_key' => null,
+                        'config_json' => null,
+                        'sort_order' => 10,
+                        'enabled' => 1,
+                    ]));
+                }
+
+                if ($enableCardcode) {
+                    $db->query($db->insert('table.pay_product_deliverables')->rows([
+                        'product_id' => (int) $productId,
+                        'handler' => 'cardcode',
+                        'target_type' => 'cardcode',
+                        'target_id' => null,
+                        'target_key' => 'default',
+                        'config_json' => null,
+                        'sort_order' => 20,
+                        'enabled' => 1,
+                    ]));
+                }
+
+                $db->query('COMMIT', Db::WRITE, '');
+            } catch (\Throwable $e) {
+                try { $db->query('ROLLBACK', Db::WRITE, ''); } catch (\Throwable $rb) {}
+                throw $e;
             }
 
             Notice::alloc()->set(_t('商品已创建，可使用短代码 [typechopay product="%s"]。', $productKey), 'success');
@@ -101,6 +109,24 @@ if ($request->isPost()) {
                 throw new InvalidArgumentException('请选择卡密商品。');
             }
 
+            // Verify the product exists and has a cardcode deliverable.
+            $product = $db->fetchRow(
+                $db->select()->from('table.pay_products')->where('id = ?', (int) $productId)->limit(1)
+            );
+            if (!$product) {
+                throw new InvalidArgumentException('商品不存在。');
+            }
+            $hasCardcode = $db->fetchRow(
+                $db->select('id')->from('table.pay_product_deliverables')
+                    ->where('product_id = ?', (int) $productId)
+                    ->where('handler = ?', 'cardcode')
+                    ->where('enabled = ?', 1)
+                    ->limit(1)
+            );
+            if (!$hasCardcode) {
+                throw new InvalidArgumentException('该商品未启用卡密交付，请先创建卡密交付规则。');
+            }
+
             $result = $cardService->importBatch(
                 (int) $productId,
                 trim((string) $request->get('batch_name')),
@@ -108,7 +134,7 @@ if ($request->isPost()) {
                 $user->hasLogin() ? (int) $user->uid : null
             );
             Notice::alloc()->set(
-                _t('卡密导入完成：成功 %d 条，重复/失败 %d 条。', $result['imported'], $result['duplicates']),
+                _t('卡密导入完成：成功 %d 条，重复 %d 条，共 %d 条。', $result['imported'], $result['duplicates'], $result['total']),
                 $result['imported'] > 0 ? 'success' : 'notice'
             );
         }
@@ -166,7 +192,7 @@ include 'menu.php';
                     <select name="purchase_policy">
                         <option value="repeatable"><?php _e('repeatable - 可重复购买，适合卡密'); ?></option>
                         <option value="once"><?php _e('once - 已购买后不再显示付款按钮'); ?></option>
-                        <option value="limited"><?php _e('limited - 预留策略，后续扩展'); ?></option>
+                        <option value="limited"><?php _e('limited - 限制每用户购买次数（需设置 max_per_user）'); ?></option>
                     </select>
                 </p>
                 <p>

@@ -11,6 +11,7 @@ use TypechoPlugin\TypechoPay\Services\GuestClaimService;
 use TypechoPlugin\TypechoPay\Services\NonceService;
 use TypechoPlugin\TypechoPay\Services\OrderService;
 use TypechoPlugin\TypechoPay\Services\ProductService;
+use TypechoPlugin\TypechoPay\Services\PurchasePolicyService;
 use TypechoPlugin\TypechoPay\Support\GuestToken;
 use TypechoPlugin\TypechoPay\Support\HttpHeaders;
 use TypechoPlugin\TypechoPay\Support\Signer;
@@ -116,6 +117,12 @@ class Action extends BaseOptions implements ActionInterface
             throw new \InvalidArgumentException('Payment gateway is disabled.');
         }
 
+        // Rate-limit by IP to prevent inventory exhaustion.
+        $orderService = new OrderService(Db::get());
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        $orderService->assertRateLimit($ip);
+        $orderService->cleanupRateLimits();
+
         $payload['return_to'] = $this->safeReturnTo($payload['return_to']);
         $product = (new ProductService(Db::get()))->resolve($payload);
         $this->assertGatewayCurrency($gateway, (string) $product['currency']);
@@ -134,8 +141,6 @@ class Action extends BaseOptions implements ActionInterface
             'purchase_policy' => (string) $product['purchase_policy'],
         ]);
 
-        $orderService = new OrderService(Db::get());
-        $accessService = new Services\AccessService(Db::get());
         $userId = $this->user->hasLogin() ? (int) $this->user->uid : null;
         $guestToken = $userId === null ? GuestToken::getOrCreate() : GuestToken::get();
         $guestTokenHash = GuestToken::hash($guestToken);
@@ -143,10 +148,8 @@ class Action extends BaseOptions implements ActionInterface
             (new GuestClaimService(Db::get()))->claimAll($userId, $guestTokenHash);
         }
 
-        if (($product['purchase_policy'] ?? 'once') === 'once'
-            && $accessService->canAccess((string) $product['biz_type'], (int) $product['biz_id'], $userId, $guestTokenHash)) {
-            throw new \InvalidArgumentException('Content is already purchased.');
-        }
+        // Check purchase policy based on paid order history, not content access.
+        (new PurchasePolicyService(Db::get()))->assertCanPurchase($product, $userId, $guestTokenHash);
 
         $order = $orderService->create($orderInput + ['gateway' => $gateway], $userId, $guestTokenHash);
 
@@ -256,16 +259,26 @@ class Action extends BaseOptions implements ActionInterface
         $config = Plugin::pluginConfig($this->options);
         $orderService = new OrderService(Db::get());
         $order = $orderService->findByOutTradeNo($outTradeNo);
-        if ($order && !$this->canReadOrder($orderService, $order, (string) $this->request->get('poll_token'))) {
-            $this->response->setStatus(403);
-            $this->response->throwContent(
-                '<!doctype html><meta charset="utf-8"><title>Payment Return</title><p>订单访问凭证无效。</p>',
-                'text/html'
-            );
-            return;
+
+        // Verify the one-time return_token (sent back by the payment platform).
+        // This token is consumed on first use and never reused.
+        $returnToken = (string) $this->request->get('return_token');
+        if (!$order || !$orderService->verifyReturnToken($order, $returnToken)) {
+            // Fallback: allow owner access (logged-in user or guest cookie).
+            if (!$order || !$this->canReadOrder($orderService, $order, '')) {
+                $this->response->setStatus(403);
+                $this->response->throwContent(
+                    '<!doctype html><meta charset="utf-8"><title>Payment Return</title><p>订单访问凭证无效。</p>',
+                    'text/html'
+                );
+                return;
+            }
+        } else {
+            // Mark the return token as used (one-time).
+            $orderService->markReturnTokenUsed($outTradeNo);
         }
 
-        if ($order && in_array($order['status'], ['pending', 'processing'], true)) {
+        if (in_array($order['status'], ['pending', 'processing'], true)) {
             try {
                 $order = $this->activeQuery($orderService, $order, $config, false);
             } catch (\Throwable $e) {
@@ -275,14 +288,19 @@ class Action extends BaseOptions implements ActionInterface
 
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? $this->request->get('return_to')));
         $fulfillmentStatus = (string) ($order['fulfillment_status'] ?? '');
-        if ($order
-            && $order['status'] === 'paid'
+
+        if ($order['status'] === 'paid'
             && (new FulfillmentManager(Db::get()))->orderHasHandler($order, 'cardcode')) {
-            $this->renderDeliveryPage($order, (string) $this->request->get('poll_token'), $returnTo);
+            // Set an HttpOnly cookie so the user can revisit the delivery page later.
+            $deliveryToken = (string) ($order['delivery_token'] ?? '');
+            if ($deliveryToken !== '') {
+                $this->setDeliveryCookie($outTradeNo, $deliveryToken);
+            }
+            $this->renderDeliveryPage($order, $deliveryToken, $returnTo);
             return;
         }
 
-        if ($order && $order['status'] === 'paid' && !in_array($fulfillmentStatus, ['failed', 'partial'], true)) {
+        if ($order['status'] === 'paid' && !in_array($fulfillmentStatus, ['failed', 'partial'], true)) {
             $this->response->redirect($returnTo);
             return;
         }
@@ -326,15 +344,35 @@ class Action extends BaseOptions implements ActionInterface
             return;
         }
 
-        $pollToken = (string) $this->request->get('poll_token');
-        if (!$this->canReadOrder($orderService, $order, $pollToken)) {
+        $deliveryToken = (string) $this->request->get('delivery_token');
+        $hasAccess = false;
+
+        // 1. Check delivery_token from URL.
+        if ($deliveryToken !== '' && $orderService->verifyDeliveryToken($order, $deliveryToken)) {
+            $hasAccess = true;
+        }
+
+        // 2. Check HttpOnly delivery cookie.
+        if (!$hasAccess) {
+            $cookieToken = $this->getDeliveryCookieToken($outTradeNo);
+            if ($cookieToken !== '' && $orderService->verifyDeliveryToken($order, $cookieToken)) {
+                $hasAccess = true;
+            }
+        }
+
+        // 3. Fallback: owner check (logged-in user or guest cookie).
+        if (!$hasAccess && $this->canReadOrder($orderService, $order, '')) {
+            $hasAccess = true;
+        }
+
+        if (!$hasAccess) {
             $this->response->setStatus(403);
             $this->response->throwContent('<!doctype html><meta charset="utf-8"><title>Card Delivery</title><p>订单访问凭证无效。</p>', 'text/html');
             return;
         }
 
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? ''));
-        $this->renderDeliveryPage($order, $pollToken, $returnTo);
+        $this->renderDeliveryPage($order, $deliveryToken, $returnTo);
     }
 
     private function renderPayment(array $order, $result): void
@@ -351,20 +389,23 @@ class Action extends BaseOptions implements ActionInterface
             return;
         }
 
+        // poll_token is used ONLY for internal frontend polling — never sent to payment platforms.
         $pollUrl = Common::url(
             '/action/typechopay?do=query&out_trade_no=' . rawurlencode($order['out_trade_no'])
             . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
             $this->options->index
         );
+        // delivery_token is used for revisiting the card delivery page.
         $deliveryUrl = Common::url(
             '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode($order['out_trade_no'])
-            . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
+            . '&delivery_token=' . rawurlencode((string) ($order['delivery_token'] ?? '')),
             $this->options->index
         );
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? ''));
         $payUrl = $result->payUrl;
         $qrContent = $result->qrContent ?: $payUrl;
         $html = '<!doctype html><html><head><meta charset="utf-8"><title>支付订单</title>'
+            . '<meta name="robots" content="noindex, nofollow">'
             . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}'
             . '.box{max-width:640px}.code{word-break:break-all;padding:12px;background:#f6f7f8;border:1px solid #ddd}'
             . '#typechopay-qrcode{width:240px;height:240px;margin:16px 0}.status{color:#555}</style>'
@@ -396,15 +437,17 @@ class Action extends BaseOptions implements ActionInterface
         $this->response->throwContent($html, 'text/html');
     }
 
-    private function renderDeliveryPage(array $order, string $pollToken, string $returnTo): void
+    private function renderDeliveryPage(array $order, string $deliveryToken, string $returnTo): void
     {
         $this->setNoStoreHeaders();
+        $this->setSecurityHeaders();
         $cards = [];
         if ((string) ($order['status'] ?? '') === 'paid') {
             $cards = (new CardCodeService(Db::get()))->deliveredCardsForOrder($order);
         }
 
         $html = '<!doctype html><html><head><meta charset="utf-8"><title>卡密交付</title>'
+            . '<meta name="robots" content="noindex, nofollow">'
             . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}'
             . '.box{max-width:760px}.card{border:1px solid #ddd;background:#fafafa;padding:14px;margin:12px 0}'
             . '.value{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;background:#fff;padding:8px;border:1px solid #e5e5e5}</style>'
@@ -434,7 +477,7 @@ class Action extends BaseOptions implements ActionInterface
 
         $deliveryUrl = Common::url(
             '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode((string) $order['out_trade_no'])
-            . ($pollToken !== '' ? '&poll_token=' . rawurlencode($pollToken) : ''),
+            . ($deliveryToken !== '' ? '&delivery_token=' . rawurlencode($deliveryToken) : ''),
             $this->options->index
         );
         $html .= '<p><a href="' . htmlspecialchars($deliveryUrl) . '">刷新交付状态</a></p>';
@@ -588,5 +631,56 @@ class Action extends BaseOptions implements ActionInterface
         $this->response->setHeader('Cache-Control', 'private, no-store, max-age=0');
         $this->response->setHeader('Pragma', 'no-cache');
         $this->response->setHeader('Expires', '0');
+    }
+
+    private function setSecurityHeaders(): void
+    {
+        $this->response->setHeader('Referrer-Policy', 'no-referrer');
+        $this->response->setHeader('X-Robots-Tag', 'noindex, nofollow');
+        $this->response->setHeader('X-Frame-Options', 'DENY');
+        $this->response->setHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    /**
+     * Set an HttpOnly cookie containing the delivery token so the user
+     * can revisit the card delivery page without the token in the URL.
+     */
+    private function setDeliveryCookie(string $outTradeNo, string $deliveryToken): void
+    {
+        $value = $outTradeNo . ':' . $deliveryToken;
+        $secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        setcookie(
+            '__typechopay_delivery',
+            $value,
+            [
+                'expires' => time() + 86400 * 7,
+                'path' => '/',
+                'httponly' => true,
+                'secure' => $secure,
+                'samesite' => 'Lax',
+            ]
+        );
+    }
+
+    /**
+     * Read the delivery token from the HttpOnly cookie, if it matches the order.
+     */
+    private function getDeliveryCookieToken(string $outTradeNo): string
+    {
+        $cookie = (string) ($_COOKIE['__typechopay_delivery'] ?? '');
+        if ($cookie === '') {
+            return '';
+        }
+
+        $parts = explode(':', $cookie, 2);
+        if (count($parts) !== 2 || $parts[0] !== $outTradeNo) {
+            return '';
+        }
+
+        if (!preg_match('/^[a-f0-9]{64}$/', $parts[1])) {
+            return '';
+        }
+
+        return $parts[1];
     }
 }
