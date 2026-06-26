@@ -2,6 +2,34 @@
 
 Date: 2026-06-25
 
+## 2026-06-26 Simplified Article Card-Code Management (v0.4.2)
+
+### Change
+
+Moved the card-code operator workflow closer to the article editor bottom area and reduced the fields shown during normal writing.
+
+### Scope
+
+- Simplified the editor panel title to **文章付费与卡密** and kept only off, paid reading, and card-code management modes.
+- Removed the article-editor JPY selector. Article-created products are fixed to CNY and use cents.
+- Kept product key, purchase policy, stock display, cover, and summary as hidden/preserved values in the article editor; advanced changes remain in 商品管理.
+- Added card-code inventory stats, recent masked card rows, and pasted card import in the article editor panel.
+- Saving an article in card-code mode can import pasted card lines through `CardCodeService`; file upload and preview confirmation remain in 商品管理.
+
+### Boundary
+
+The article editor import accepts pasted text only because Typecho's native write form is not a file-upload form. Full `.txt/.csv/.tsv` upload and preview confirmation remain in the product management page.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-26 Article Editor Paid-Feature Panel (v0.4.1)
 
 ### Change

@@ -12,6 +12,7 @@ use Typecho\Widget\Helper\Form\Element\Select;
 use Typecho\Widget\Helper\Form\Element\Text;
 use Typecho\Widget\Helper\Form\Element\Textarea;
 use TypechoPlugin\TypechoPay\Services\AccessService;
+use TypechoPlugin\TypechoPay\Services\CardCodeService;
 use TypechoPlugin\TypechoPay\Services\GuestClaimService;
 use TypechoPlugin\TypechoPay\Services\ProductService;
 use TypechoPlugin\TypechoPay\Services\PurchasePolicyService;
@@ -53,7 +54,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.1
+ * @version 0.4.2
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -240,6 +241,7 @@ class Plugin implements PluginInterface
     {
         $cid = self::archiveContentId($content);
         $product = $cid > 0 ? self::findProductByContentId($cid) : null;
+        $productId = $product ? (int) $product['id'] : 0;
         $handlers = $product ? self::productDeliverableHandlers((int) $product['id']) : [];
         $hasCardcode = in_array('cardcode', $handlers, true);
         $hasPostAccess = in_array('post_access', $handlers, true);
@@ -250,16 +252,17 @@ class Plugin implements PluginInterface
 
         $title = $product ? (string) ($product['title'] ?? '') : '';
         $amount = $product ? (int) ($product['amount'] ?? 0) : 0;
-        $currency = $product ? (string) ($product['currency'] ?? 'CNY') : 'CNY';
         $policy = $product ? (string) ($product['purchase_policy'] ?? 'repeatable') : 'repeatable';
         $maxPerUser = $product ? (int) ($product['max_per_user'] ?? 0) : 0;
-        $allowGuest = $product ? (int) ($product['allow_guest'] ?? 0) : 0;
+        $allowGuest = $product ? (int) ($product['allow_guest'] ?? 1) : 1;
         $stockDisplayMode = $product ? (string) ($product['stock_display_mode'] ?? 'exact') : 'exact';
         $summary = $product ? (string) ($product['summary'] ?? '') : '';
         $coverUrl = $product ? (string) ($product['cover_url'] ?? '') : '';
         $productKey = $product ? (string) ($product['product_key'] ?? '') : '';
         $containsShortcode = is_string($content->text ?? null) && self::containsTypechoPayShortcode((string) $content->text);
         $shouldInsert = !$containsShortcode && $mode !== 'off';
+        $cardStats = ($productId > 0 && $hasCardcode) ? self::articleCardStats($productId) : null;
+        $recentCards = ($productId > 0 && $hasCardcode) ? self::recentArticleCards($productId, 8) : [];
 
         $options = Options::alloc();
         $productsUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fproducts.php';
@@ -274,89 +277,116 @@ class Plugin implements PluginInterface
         ?>
         <section class="typechopay-editor-panel">
             <style>
-                .typechopay-editor-panel{margin:18px 0 22px;padding:16px;border:1px solid #d9e2ef;border-radius:8px;background:#fff}
-                .typechopay-editor-panel h3{margin:0 0 14px;font-size:16px}
+                .typechopay-editor-panel{margin:20px 0 22px;padding:0;border:1px solid #dfe5ec;background:#fff}
+                .typechopay-editor-panel__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid #edf1f5;background:#fafafa}
+                .typechopay-editor-panel h3{margin:0;font-size:16px}
+                .typechopay-editor-panel__body{padding:16px}
                 .typechopay-editor-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0}
                 .typechopay-editor-row strong{min-width:76px;color:#0f62fe}
-                .typechopay-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+                .typechopay-editor-grid{display:grid;grid-template-columns:minmax(160px,220px) minmax(180px,1fr) minmax(180px,1fr);gap:12px;margin-top:12px}
                 .typechopay-editor-grid label{display:block;font-weight:600;margin-bottom:4px}
                 .typechopay-editor-grid input,.typechopay-editor-grid select{max-width:100%}
                 .typechopay-editor-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+                .typechopay-editor-cardbox{margin-top:16px;padding:14px;border:1px solid #e5e7eb;background:#fbfcfe}
+                .typechopay-editor-stats{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+                .typechopay-editor-stat{display:inline-flex;gap:5px;align-items:center;padding:4px 9px;border-radius:4px;background:#eef2ff;color:#374151;font-weight:600}
+                .typechopay-editor-stat--ok{background:#e0f2fe;color:#0369a1}
+                .typechopay-editor-stat--sold{background:#ffe4e6;color:#be123c}
+                .typechopay-editor-import textarea{width:100%;min-height:126px}
+                .typechopay-editor-cards{width:100%;margin-top:10px;border-collapse:collapse}
+                .typechopay-editor-cards th,.typechopay-editor-cards td{padding:7px 8px;border:1px solid #e5e7eb;text-align:left}
+                .typechopay-editor-muted{color:#6b7280}
                 @media(max-width:768px){.typechopay-editor-grid{grid-template-columns:1fr}}
             </style>
-            <h3><?php _e('TypechoPay 付费功能'); ?></h3>
-            <div class="typechopay-editor-row">
-                <strong><?php _e('付费模式'); ?></strong>
-                <label><input type="radio" name="typechopay_pay_mode" value="off" <?php if ($mode === 'off') echo 'checked'; ?>> <?php _e('关闭'); ?></label>
-                <label><input type="radio" name="typechopay_pay_mode" value="post_access" <?php if ($mode === 'post_access') echo 'checked'; ?>> <?php _e('付费阅读'); ?></label>
-                <label title="<?php _e('下载交付将在后续版本加入'); ?>"><input type="radio" disabled> <?php _e('付费下载'); ?></label>
-                <label title="<?php _e('图片交付将在后续版本加入'); ?>"><input type="radio" disabled> <?php _e('付费图片'); ?></label>
-                <label title="<?php _e('视频交付将在后续版本加入'); ?>"><input type="radio" disabled> <?php _e('付费视频'); ?></label>
-                <label><input type="radio" name="typechopay_pay_mode" value="cardcode" <?php if ($mode === 'cardcode') echo 'checked'; ?>> <?php _e('卡密管理'); ?></label>
+            <div class="typechopay-editor-panel__head">
+                <h3><?php _e('文章付费与卡密'); ?></h3>
+                <?php if ($product): ?><span class="typechopay-editor-muted"><?php echo htmlspecialchars($productKey); ?></span><?php endif; ?>
             </div>
-            <div class="typechopay-editor-row">
-                <strong><?php _e('购买权限'); ?></strong>
-                <label><input type="radio" name="typechopay_purchase_permission" value="all" <?php if ($allowGuest === 1) echo 'checked'; ?>> <?php _e('所有人可购买'); ?></label>
-                <label><input type="radio" name="typechopay_purchase_permission" value="login" <?php if ($allowGuest !== 1) echo 'checked'; ?>> <?php _e('仅登录用户'); ?></label>
-            </div>
-            <div class="typechopay-editor-grid">
-                <p>
-                    <label><?php _e('商品标题'); ?></label>
-                    <input type="text" name="typechopay_product_title" value="<?php echo htmlspecialchars($title); ?>" placeholder="<?php _e('留空则使用文章标题'); ?>" class="w-100">
-                </p>
-                <p>
-                    <label><?php _e('商品标识'); ?></label>
-                    <input type="text" name="typechopay_product_key" value="<?php echo htmlspecialchars($productKey); ?>" placeholder="<?php echo $cid > 0 ? 'post-' . (int) $cid : _t('保存后自动生成'); ?>" class="w-100">
-                </p>
-                <p>
-                    <label><?php _e('价格'); ?></label>
-                    <input type="number" name="typechopay_amount" min="1" value="<?php echo $amount > 0 ? $amount : ''; ?>" placeholder="<?php _e('CNY 用分，JPY 用日元'); ?>">
-                    <select name="typechopay_currency">
-                        <option value="CNY" <?php if ($currency === 'CNY') echo 'selected'; ?>>CNY</option>
-                        <option value="JPY" <?php if ($currency === 'JPY') echo 'selected'; ?>>JPY</option>
-                    </select>
-                </p>
-                <p>
-                    <label><?php _e('购买策略'); ?></label>
-                    <select name="typechopay_purchase_policy">
-                        <option value="repeatable" <?php if ($policy === 'repeatable') echo 'selected'; ?>><?php _e('可重复购买'); ?></option>
-                        <option value="once" <?php if ($policy === 'once') echo 'selected'; ?>><?php _e('每人限购一次'); ?></option>
-                        <option value="limited" <?php if ($policy === 'limited') echo 'selected'; ?>><?php _e('每人限购 N 次'); ?></option>
-                    </select>
-                    <input type="number" name="typechopay_max_per_user" min="1" value="<?php echo $maxPerUser > 0 ? $maxPerUser : ''; ?>" placeholder="N" style="width:70px">
-                </p>
-                <p>
-                    <label><?php _e('库存显示'); ?></label>
-                    <select name="typechopay_stock_display_mode">
-                        <option value="exact" <?php if ($stockDisplayMode === 'exact') echo 'selected'; ?>><?php _e('精确库存'); ?></option>
-                        <option value="range" <?php if ($stockDisplayMode === 'range') echo 'selected'; ?>><?php _e('区间库存'); ?></option>
-                        <option value="hidden" <?php if ($stockDisplayMode === 'hidden') echo 'selected'; ?>><?php _e('隐藏库存'); ?></option>
-                    </select>
-                </p>
-                <p>
-                    <label><?php _e('商品封面 URL'); ?></label>
-                    <input type="text" name="typechopay_cover_url" value="<?php echo htmlspecialchars($coverUrl); ?>" placeholder="<?php _e('留空则由主题文章封面负责'); ?>" class="w-100">
-                </p>
-                <p style="grid-column:1/-1">
-                    <label><?php _e('商品摘要'); ?></label>
-                    <input type="text" name="typechopay_summary" value="<?php echo htmlspecialchars($summary); ?>" placeholder="<?php _e('留空则前台使用默认自动售卡说明'); ?>" class="w-100">
-                </p>
-            </div>
-            <div class="typechopay-editor-row">
-                <label><input type="checkbox" name="typechopay_unlock_article" value="1" <?php if ($hasPostAccess || $mode === 'post_access') echo 'checked'; ?>> <?php _e('购买后解锁本文'); ?></label>
-                <label><input type="checkbox" name="typechopay_insert_shortcode" value="1" <?php if ($shouldInsert) echo 'checked'; ?>> <?php _e('保存时在正文开头插入购买模块'); ?></label>
-                <?php if ($containsShortcode): ?><small><?php _e('正文已包含 TypechoPay 短代码，不会重复插入。'); ?></small><?php endif; ?>
-            </div>
-            <div class="typechopay-editor-actions">
-                <?php if ($product): ?>
-                    <a class="btn btn-xs" href="<?php echo htmlspecialchars($productsUrl); ?>"><?php _e('编辑商品'); ?></a>
-                    <?php if ($hasCardcode): ?>
-                        <a class="btn btn-xs" href="<?php echo htmlspecialchars($inventoryUrl); ?>"><?php _e('查看库存'); ?></a>
-                        <a class="btn btn-xs" href="<?php echo htmlspecialchars($salesUrl); ?>"><?php _e('查看销售'); ?></a>
+            <div class="typechopay-editor-panel__body">
+                <div class="typechopay-editor-row">
+                    <strong><?php _e('付费模式'); ?></strong>
+                    <label><input type="radio" name="typechopay_pay_mode" value="off" <?php if ($mode === 'off') echo 'checked'; ?>> <?php _e('关闭'); ?></label>
+                    <label><input type="radio" name="typechopay_pay_mode" value="post_access" <?php if ($mode === 'post_access') echo 'checked'; ?>> <?php _e('付费阅读'); ?></label>
+                    <label><input type="radio" name="typechopay_pay_mode" value="cardcode" <?php if ($mode === 'cardcode') echo 'checked'; ?>> <?php _e('卡密管理'); ?></label>
+                </div>
+                <div class="typechopay-editor-grid">
+                    <p>
+                        <label><?php _e('价格'); ?></label>
+                        <input type="number" name="typechopay_amount" min="1" value="<?php echo $amount > 0 ? $amount : ''; ?>" placeholder="<?php _e('单位：分'); ?>" class="w-100">
+                    </p>
+                    <p>
+                        <label><?php _e('购买权限'); ?></label>
+                        <select name="typechopay_purchase_permission" class="w-100">
+                            <option value="all" <?php if ($allowGuest === 1) echo 'selected'; ?>><?php _e('所有人可购买'); ?></option>
+                            <option value="login" <?php if ($allowGuest !== 1) echo 'selected'; ?>><?php _e('仅登录用户'); ?></option>
+                        </select>
+                    </p>
+                    <p>
+                        <label><?php _e('商品标题'); ?></label>
+                        <input type="text" name="typechopay_product_title" value="<?php echo htmlspecialchars($title); ?>" placeholder="<?php _e('留空则使用文章标题'); ?>" class="w-100">
+                    </p>
+                </div>
+
+                <input type="hidden" name="typechopay_product_key" value="<?php echo htmlspecialchars($productKey); ?>">
+                <input type="hidden" name="typechopay_currency" value="CNY">
+                <input type="hidden" name="typechopay_purchase_policy" value="<?php echo htmlspecialchars($policy !== '' ? $policy : 'repeatable'); ?>">
+                <input type="hidden" name="typechopay_max_per_user" value="<?php echo $maxPerUser > 0 ? (int) $maxPerUser : ''; ?>">
+                <input type="hidden" name="typechopay_stock_display_mode" value="<?php echo htmlspecialchars($stockDisplayMode !== '' ? $stockDisplayMode : 'exact'); ?>">
+                <input type="hidden" name="typechopay_cover_url" value="<?php echo htmlspecialchars($coverUrl); ?>">
+                <input type="hidden" name="typechopay_summary" value="<?php echo htmlspecialchars($summary); ?>">
+
+                <div class="typechopay-editor-row">
+                    <label><input type="checkbox" name="typechopay_unlock_article" value="1" <?php if ($hasPostAccess || $mode === 'post_access') echo 'checked'; ?>> <?php _e('购买后解锁本文'); ?></label>
+                    <label><input type="checkbox" name="typechopay_insert_shortcode" value="1" <?php if ($shouldInsert) echo 'checked'; ?>> <?php _e('在正文显示购买模块'); ?></label>
+                    <?php if ($containsShortcode): ?><small class="typechopay-editor-muted"><?php _e('正文已包含 TypechoPay 短代码，不会重复插入。'); ?></small><?php endif; ?>
+                </div>
+
+                <div class="typechopay-editor-cardbox">
+                    <strong><?php _e('卡密管理'); ?></strong>
+                    <?php if ($cardStats): ?>
+                        <div class="typechopay-editor-stats">
+                            <span class="typechopay-editor-stat"><?php _e('全部'); ?> <?php echo (int) $cardStats['total']; ?></span>
+                            <span class="typechopay-editor-stat typechopay-editor-stat--ok"><?php _e('库存'); ?> <?php echo (int) $cardStats['available']; ?></span>
+                            <span class="typechopay-editor-stat typechopay-editor-stat--sold"><?php _e('已售'); ?> <?php echo (int) $cardStats['delivered']; ?></span>
+                            <?php if ((int) $cardStats['reserved'] > 0): ?><span class="typechopay-editor-stat"><?php _e('占用'); ?> <?php echo (int) $cardStats['reserved']; ?></span><?php endif; ?>
+                        </div>
+                    <?php else: ?>
+                        <p class="typechopay-editor-muted"><?php _e('选择“卡密管理”并保存文章后，会自动创建绑定商品。之后可以直接在这里粘贴卡密。'); ?></p>
                     <?php endif; ?>
-                <?php else: ?>
-                    <small><?php _e('首次保存文章后会自动创建绑定商品，之后可导入卡密和查看库存。'); ?></small>
-                <?php endif; ?>
+
+                    <div class="typechopay-editor-import">
+                        <p>
+                            <label><?php _e('添加卡密'); ?></label>
+                            <input type="text" name="typechopay_card_batch_name" value="" placeholder="<?php _e('批次名称，可留空'); ?>" style="width:220px;margin-left:8px;">
+                        </p>
+                        <textarea name="typechopay_card_lines" placeholder="<?php _e('一行一张卡密。支持：卡号----卡密、卡号|卡密、Tab 分隔或单独兑换码。粘贴后保存文章即可导入。'); ?>"></textarea>
+                    </div>
+
+                    <?php if ($recentCards): ?>
+                        <table class="typechopay-editor-cards">
+                            <thead><tr><th><?php _e('最近卡密'); ?></th><th><?php _e('状态'); ?></th><th><?php _e('创建时间'); ?></th></tr></thead>
+                            <tbody>
+                            <?php foreach ($recentCards as $card): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars((string) ($card['code_mask'] ?? '')); ?></td>
+                                    <td><?php echo htmlspecialchars((string) ($card['status'] ?? '')); ?></td>
+                                    <td><?php echo htmlspecialchars((string) ($card['created_at'] ?? '')); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+
+                    <div class="typechopay-editor-actions">
+                        <?php if ($product): ?>
+                            <a class="btn btn-xs" href="<?php echo htmlspecialchars($productsUrl); ?>"><?php _e('高级设置'); ?></a>
+                            <?php if ($hasCardcode): ?>
+                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($inventoryUrl); ?>"><?php _e('完整库存'); ?></a>
+                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($salesUrl); ?>"><?php _e('销售记录'); ?></a>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </section>
         <?php
@@ -401,10 +431,20 @@ class Plugin implements PluginInterface
         }
 
         try {
-            self::upsertArticleProduct($cid, $contents, $widget, $mode);
+            $productId = self::upsertArticleProduct($cid, $contents, $widget, $mode);
         } catch (\Throwable $e) {
             error_log('[TypechoPay] Failed to save article pay settings: ' . $e->getMessage());
             Notice::alloc()->set(_t('TypechoPay 付费设置保存失败：%s', $e->getMessage()), 'error');
+            return;
+        }
+
+        if ($mode === 'cardcode' && $productId !== null) {
+            try {
+                self::importArticleCardLines($productId, $widget);
+            } catch (\Throwable $e) {
+                error_log('[TypechoPay] Failed to import article card lines: ' . $e->getMessage());
+                Notice::alloc()->set(_t('卡密导入失败：%s', $e->getMessage()), 'error');
+            }
         }
     }
 
@@ -1017,7 +1057,7 @@ class Plugin implements PluginInterface
         return $shortcode . $text;
     }
 
-    private static function upsertArticleProduct(int $cid, array $contents, $widget, string $mode): void
+    private static function upsertArticleProduct(int $cid, array $contents, $widget, string $mode): ?int
     {
         $db = Db::get();
         $product = self::findProductByContentId($cid);
@@ -1031,7 +1071,7 @@ class Plugin implements PluginInterface
                     'updated_at' => $now,
                 ])->where('id = ?', (int) $product['id']));
             }
-            return;
+            return null;
         }
 
         $title = trim((string) $widget->request->get('typechopay_product_title'));
@@ -1185,6 +1225,7 @@ class Plugin implements PluginInterface
                 ]));
             }
             $db->query('COMMIT', Db::WRITE, '');
+            return $productId;
         } catch (\Throwable $e) {
             try {
                 $db->query('ROLLBACK', Db::WRITE, '');
@@ -1192,6 +1233,74 @@ class Plugin implements PluginInterface
             }
             throw $e;
         }
+    }
+
+    private static function importArticleCardLines(int $productId, $widget): void
+    {
+        $rawLines = (string) $widget->request->get('typechopay_card_lines');
+        if (trim($rawLines) === '') {
+            return;
+        }
+
+        $batchName = trim((string) $widget->request->get('typechopay_card_batch_name'));
+        if ($batchName === '') {
+            $batchName = 'article-' . date('YmdHis');
+        }
+
+        $user = User::alloc();
+        $result = (new CardCodeService(Db::get()))->importBatch(
+            $productId,
+            $batchName,
+            $rawLines,
+            $user->hasLogin() ? (int) $user->uid : null
+        );
+
+        Notice::alloc()->set(
+            _t(
+                '卡密导入完成：原始 %d 条，文件内重复 %d 条，成功 %d 条，数据库重复 %d 条。',
+                $result['raw_count'],
+                $result['duplicate_in_file'],
+                $result['imported'],
+                $result['duplicates']
+            ),
+            $result['imported'] > 0 ? 'success' : 'notice'
+        );
+    }
+
+    private static function articleCardStats(int $productId): array
+    {
+        if ($productId <= 0) {
+            return self::emptyArticleCardStats();
+        }
+
+        return (new CardCodeService(Db::get()))->stockCounts($productId);
+    }
+
+    private static function recentArticleCards(int $productId, int $limit): array
+    {
+        if ($productId <= 0) {
+            return [];
+        }
+
+        $limit = max(1, min(20, $limit));
+        return Db::get()->fetchAll(
+            Db::get()->select('code_mask', 'status', 'created_at')->from('table.pay_card_items')
+                ->where('product_id = ?', $productId)
+                ->order('id', Db::SORT_DESC)
+                ->limit($limit)
+        );
+    }
+
+    private static function emptyArticleCardStats(): array
+    {
+        return [
+            'total' => 0,
+            'available' => 0,
+            'reserved' => 0,
+            'delivered' => 0,
+            'void' => 0,
+            'compromised' => 0,
+        ];
     }
 
     private static function findProductByContentId(int $contentId): ?array

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.4.2 - 2026-06-26
+
+### Article editor
+
+- Simplified the article editor paid-feature panel to the common modes: off, paid reading, and card-code management.
+- Fixed article-editor products to CNY so the card-code workflow no longer shows a JPY selector.
+- Added card-code inventory stats, recent masked card rows, and pasted card import directly at the bottom of the article editor.
+- Saving an article in card-code mode can now import pasted card lines through `CardCodeService` while keeping full file upload and preview import in 商品管理.
+
 ## 0.4.1 - 2026-06-26
 
 ### Article editor

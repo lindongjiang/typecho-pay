@@ -37,8 +37,15 @@ ap_assert(strpos($pluginSource, 'function renderArticlePayPanel') !== false, 'Pl
 ap_assert(strpos($pluginSource, 'function injectArticleProductShortcode') !== false, 'Plugin can insert product shortcode while saving article');
 ap_assert(strpos($pluginSource, 'function saveArticlePaySettings') !== false, 'Plugin saves article pay settings');
 ap_assert(strpos($pluginSource, 'function upsertArticleProduct') !== false, 'Plugin upserts product from article cid');
+ap_assert(strpos($pluginSource, 'function importArticleCardLines') !== false, 'Editor can import pasted card lines on save');
+ap_assert(strpos($pluginSource, 'function articleCardStats') !== false, 'Editor shows card inventory stats');
+ap_assert(strpos($pluginSource, 'function recentArticleCards') !== false, 'Editor shows recent card masks');
+ap_assert(strpos($pluginSource, 'new CardCodeService') !== false, 'Editor import uses CardCodeService');
 ap_assert(strpos($pluginSource, 'typechopay_pay_mode') !== false, 'Editor panel has pay mode field');
 ap_assert(strpos($pluginSource, 'typechopay_insert_shortcode') !== false, 'Editor panel can insert shortcode');
+ap_assert(strpos($pluginSource, 'typechopay_card_lines') !== false, 'Editor panel has pasted card import field');
+ap_assert(strpos($pluginSource, 'name="typechopay_currency" value="CNY"') !== false, 'Editor panel fixes article products to CNY');
+ap_assert(strpos($pluginSource, '付费下载') === false, 'Editor panel hides reserved delivery modes');
 ap_assert(strpos($pluginSource, '$deliverableTargetType') !== false, 'Editor save keeps page/post deliverable target type');
 ap_assert(strpos($pluginSource, 'containsTypechoPayShortcode') !== false, 'Auto inject skips manual shortcodes');
 ap_assert(strpos($pluginSource, 'typechopay_product(?:\\s+') !== false, 'typechopay_product shortcode supports empty attrs');
