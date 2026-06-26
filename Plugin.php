@@ -294,7 +294,7 @@ class Plugin implements PluginInterface
 
     private static function renderPayBox(array $payload, array $gateways, Options $options, array $config): string
     {
-        $action = Common::url('/action/' . self::ACTION . '?do=create', $options->index);
+        $action = Common::url('/action/' . self::ACTION . '?do=prepare', $options->index);
         $labels = [
             'paypay' => 'PayPay',
             'wechat' => '微信支付',
@@ -305,10 +305,8 @@ class Plugin implements PluginInterface
         foreach ($gateways as $gateway) {
             $signedPayload = $payload + [
                 'gateway' => $gateway,
-                'ts' => (string) time(),
-                'nonce' => bin2hex(random_bytes(8)),
             ];
-            $signedPayload['signature'] = Support\Signer::sign($signedPayload, self::signingSecret($options, $config));
+            $signedPayload['entry_signature'] = Support\Signer::sign($signedPayload, self::signingSecret($options, $config));
 
             $fields = '';
             foreach ($signedPayload as $key => $value) {
@@ -322,7 +320,7 @@ class Plugin implements PluginInterface
 
         return '<div class="typechopay-box" data-typechopay="1">'
             . '<strong>' . htmlspecialchars($payload['subject']) . '</strong>'
-            . '<span class="typechopay-amount">' . htmlspecialchars($payload['currency'] . ' ' . $payload['amount']) . '</span>'
+            . '<span class="typechopay-amount">' . htmlspecialchars(Support\Money::formatForDisplay((int) $payload['amount'], (string) $payload['currency'])) . '</span>'
             . implode('', $buttons)
             . '</div>';
     }
@@ -362,6 +360,9 @@ class Plugin implements PluginInterface
         $user = User::alloc();
         $userId = $user->hasLogin() ? (int) $user->uid : null;
         $guestTokenHash = GuestToken::hash(GuestToken::get());
+        if ($userId !== null && $guestTokenHash !== null) {
+            (new AccessService(Db::get()))->claimGuestEntitlements($userId, $guestTokenHash);
+        }
 
         return (new AccessService(Db::get()))->canAccess($bizType, $bizId, $userId, $guestTokenHash);
     }
@@ -456,6 +457,7 @@ class Plugin implements PluginInterface
                 `user_id` BIGINT UNSIGNED DEFAULT NULL,
                 `guest_token_hash` VARCHAR(128) DEFAULT NULL,
                 `status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+                `poll_token_hash` VARCHAR(128) DEFAULT NULL,
                 `platform_trade_no` VARCHAR(128) DEFAULT NULL,
                 `pay_url` TEXT DEFAULT NULL,
                 `qr_content` TEXT DEFAULT NULL,
@@ -536,6 +538,7 @@ class Plugin implements PluginInterface
                 user_id INTEGER DEFAULT NULL,
                 guest_token_hash TEXT DEFAULT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
+                poll_token_hash TEXT DEFAULT NULL,
                 platform_trade_no TEXT DEFAULT NULL,
                 pay_url TEXT DEFAULT NULL,
                 qr_content TEXT DEFAULT NULL,
@@ -609,6 +612,7 @@ class Plugin implements PluginInterface
                 user_id BIGINT DEFAULT NULL,
                 guest_token_hash VARCHAR(128) DEFAULT NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                poll_token_hash VARCHAR(128) DEFAULT NULL,
                 platform_trade_no VARCHAR(128) DEFAULT NULL,
                 pay_url TEXT DEFAULT NULL,
                 qr_content TEXT DEFAULT NULL,
@@ -678,6 +682,7 @@ class Plugin implements PluginInterface
             "return_to {$textType} DEFAULT NULL",
             "last_queried_at {$dateType} DEFAULT NULL",
             "query_count INTEGER NOT NULL DEFAULT 0",
+            "poll_token_hash {$string128} DEFAULT NULL",
         ];
         foreach ($orderColumns as $column) {
             self::trySchema($db, "ALTER TABLE {$ordersTable} ADD COLUMN {$column}");

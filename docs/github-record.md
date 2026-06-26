@@ -16,7 +16,7 @@ Aligned payment setup documentation with the current gateway implementation and 
 - Updated plugin metadata version to `0.2.0`.
 - Split the duplicated `0.1.0` changelog section into `0.1.1` and `0.1.0`.
 - Removed config-page pseudo section fields so plugin settings do not persist meaningless section-marker values.
-- Added `.github/workflows/ci.yml` to install dependencies, lint PHP files, and run `tests/SignerTest.php`.
+- Added `.github/workflows/ci.yml` to install dependencies, lint PHP files, and run `tests/*Test.php`.
 - Suppressed third-party Alipay SDK deprecation notices while loading SDK files on PHP 8.
 - Declared PHP `ext-curl`, installed curl in CI, and excluded `vendor/` from CI lint.
 - Changed the settings help page to generate callback and return URLs through Typecho `Common::url()`.
@@ -34,7 +34,34 @@ Server-side checks should be run after pulling the pushed commit:
 composer validate --no-check-lock --strict
 composer install --no-dev --prefer-dist --no-interaction --no-progress
 find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
-php tests/SignerTest.php
+for test in tests/*Test.php; do php "$test"; done
+```
+
+## 2026-06-26 Payment Hardening Follow-Up
+
+### Change
+
+Hardened the payment lifecycle before real-money sandbox testing.
+
+### Scope
+
+- Made PayPay transaction webhooks compatible with official `merchant_order_id`, `order_id`, `order_amount`, `merchant_id`, and `notification_type` fields.
+- Added per-order poll tokens and ownership checks for query and return endpoints.
+- Changed article payment forms to call `do=prepare`, so fresh order data is generated at click time instead of embedding short-lived nonce values in cached HTML.
+- Kept unknown create outcomes in `processing`; only definite local/configuration failures are marked `failed`.
+- Synced provider terminal statuses to local orders.
+- Added duplicate purchase prevention, stricter business target validation, formatted amount display, guest entitlement claim, and hardened guest cookies.
+- Added `tests/PayPayWebhookTest.php` and expanded CI to run all `tests/*Test.php`.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+composer install --no-dev --prefer-dist --no-interaction --no-progress
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
 ```
 
 ## Change

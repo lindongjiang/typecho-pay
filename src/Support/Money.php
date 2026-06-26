@@ -32,4 +32,18 @@ final class Money
     {
         return number_format($amount / 100, 2, '.', '');
     }
+
+    public static function formatForDisplay(int $amount, string $currency): string
+    {
+        $currency = strtoupper($currency);
+        if ($currency === 'CNY') {
+            return '¥' . number_format($amount / 100, 2, '.', '');
+        }
+
+        if ($currency === 'JPY') {
+            return '¥' . number_format($amount, 0, '.', ',');
+        }
+
+        return $currency . ' ' . $amount;
+    }
 }

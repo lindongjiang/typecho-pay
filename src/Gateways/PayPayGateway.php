@@ -30,7 +30,9 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
             'codeType' => 'ORDER_QR',
             'orderDescription' => $order['subject'],
             'requestedAt' => time(),
-            'redirectUrl' => $this->returnUrl('paypay') . '&out_trade_no=' . rawurlencode($order['out_trade_no']),
+            'redirectUrl' => $this->returnUrl('paypay')
+                . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
+                . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
             'redirectType' => 'WEB_LINK',
             'isAuthorization' => false,
         ];
@@ -52,31 +54,48 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
         }
 
         $event = $data['data'] ?? $data;
+        $notificationType = (string) ($event['notification_type'] ?? '');
+        if ($notificationType !== '' && $notificationType !== 'Transaction') {
+            return new NotifyResult(
+                'ignored',
+                'unknown',
+                null,
+                null,
+                null,
+                $signatureOk,
+                $data,
+                isset($event['notification_id']) ? (string) $event['notification_id'] : null,
+                $notificationType
+            );
+        }
+
+        $merchantId = (string) ($event['merchant_id'] ?? ($event['merchantId'] ?? ''));
+        if ($merchantId !== '' && !hash_equals((string) $this->config['paypayMerchantId'], $merchantId)) {
+            throw new \RuntimeException('PayPay merchant id mismatch.');
+        }
+
         $state = strtoupper((string) ($event['state'] ?? ($event['status'] ?? '')));
         $outTradeNo = (string) ($event['merchantPaymentId'] ?? ($event['merchant_order_id'] ?? ''));
         if ($outTradeNo === '') {
             throw new \RuntimeException('Missing PayPay merchant payment id.');
         }
 
-        $amount = null;
-        $currency = null;
-        if (isset($event['amount']) && is_array($event['amount'])) {
-            $amount = isset($event['amount']['amount']) ? (int) $event['amount']['amount'] : null;
-            $currency = isset($event['amount']['currency']) ? strtoupper((string) $event['amount']['currency']) : null;
-        }
-
-        $status = $signatureOk && $state === 'COMPLETED' ? 'paid' : strtolower($state ?: 'ignored');
+        [$amount, $currency] = $this->extractAmount($event);
+        $platformTradeNo = isset($event['paymentId'])
+            ? (string) $event['paymentId']
+            : (isset($event['order_id']) ? (string) $event['order_id'] : null);
+        $status = $signatureOk ? $this->normalizeState($state) : 'invalid_signature';
 
         return new NotifyResult(
             $status,
             $outTradeNo,
-            isset($event['paymentId']) ? (string) $event['paymentId'] : null,
+            $platformTradeNo,
             $amount,
             $currency,
             $signatureOk,
             $data,
             isset($event['notification_id']) ? (string) $event['notification_id'] : null,
-            isset($event['notification_type']) ? (string) $event['notification_type'] : null
+            $notificationType !== '' ? $notificationType : null
         );
     }
 
@@ -85,18 +104,21 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
         $this->requireConfig(['paypayApiKey', 'paypayApiSecret', 'paypayMerchantId']);
         $response = $this->request('GET', '/v2/codes/payments/' . rawurlencode($order['out_trade_no']));
         $event = $response['data'] ?? [];
-        $state = strtoupper((string) ($event['state'] ?? ($event['status'] ?? '')));
-        $amount = null;
-        $currency = null;
-        if (isset($event['amount']) && is_array($event['amount'])) {
-            $amount = isset($event['amount']['amount']) ? (int) $event['amount']['amount'] : null;
-            $currency = isset($event['amount']['currency']) ? strtoupper((string) $event['amount']['currency']) : null;
+        $merchantId = (string) ($event['merchant_id'] ?? ($event['merchantId'] ?? ''));
+        if ($merchantId !== '' && !hash_equals((string) $this->config['paypayMerchantId'], $merchantId)) {
+            throw new \RuntimeException('PayPay query merchant id mismatch.');
         }
 
+        $state = strtoupper((string) ($event['state'] ?? ($event['status'] ?? '')));
+        [$amount, $currency] = $this->extractAmount($event);
+        $platformTradeNo = isset($event['paymentId'])
+            ? (string) $event['paymentId']
+            : (isset($event['order_id']) ? (string) $event['order_id'] : null);
+
         return new NotifyResult(
-            $state === 'COMPLETED' ? 'paid' : strtolower($state ?: 'pending'),
+            $this->normalizeState($state),
             $order['out_trade_no'],
-            isset($event['paymentId']) ? (string) $event['paymentId'] : null,
+            $platformTradeNo,
             $amount,
             $currency,
             true,
@@ -104,6 +126,43 @@ final class PayPayGateway extends AbstractGateway implements GatewayInterface
             isset($event['notification_id']) ? (string) $event['notification_id'] : null,
             'active_query'
         );
+    }
+
+    private function extractAmount(array $event): array
+    {
+        if (isset($event['amount']) && is_array($event['amount'])) {
+            return [
+                isset($event['amount']['amount']) ? (int) $event['amount']['amount'] : null,
+                isset($event['amount']['currency']) ? strtoupper((string) $event['amount']['currency']) : null,
+            ];
+        }
+
+        if (isset($event['order_amount']) && $event['order_amount'] !== '') {
+            return [(int) $event['order_amount'], 'JPY'];
+        }
+
+        return [null, null];
+    }
+
+    private function normalizeState(string $state): string
+    {
+        switch (strtoupper($state)) {
+            case 'COMPLETED':
+                return 'paid';
+            case 'EXPIRED':
+                return 'expired';
+            case 'CANCELED':
+            case 'CANCELLED':
+                return 'cancelled';
+            case 'FAILED':
+                return 'failed';
+            case 'AUTHORIZED':
+            case 'CREATED':
+            case 'PENDING':
+                return 'pending';
+            default:
+                return $state === '' ? 'ignored' : strtolower($state);
+        }
     }
 
     private function request(string $method, string $path, ?array $payload = null): array

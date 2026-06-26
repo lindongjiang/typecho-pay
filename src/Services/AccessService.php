@@ -69,6 +69,10 @@ final class AccessService
             return false;
         }
 
+        if ($userId === null && $guestTokenHash === null) {
+            return false;
+        }
+
         $now = date('Y-m-d H:i:s');
         $select = $this->db->select('id')->from('table.pay_entitlements')
             ->where('biz_type = ?', $bizType)
@@ -77,14 +81,26 @@ final class AccessService
             ->where('(expires_at IS NULL OR expires_at > ?)', $now)
             ->limit(1);
 
-        if ($userId !== null) {
+        if ($userId !== null && $guestTokenHash !== null) {
+            $select->where('(user_id = ? OR guest_token_hash = ?)', $userId, $guestTokenHash);
+        } elseif ($userId !== null) {
             $select->where('user_id = ?', $userId);
-        } elseif ($guestTokenHash !== null) {
-            $select->where('guest_token_hash = ?', $guestTokenHash);
         } else {
-            return false;
+            $select->where('guest_token_hash = ?', $guestTokenHash);
         }
 
         return (bool) $this->db->fetchRow($select);
+    }
+
+    public function claimGuestEntitlements(int $userId, ?string $guestTokenHash): void
+    {
+        if ($userId <= 0 || $guestTokenHash === null || $guestTokenHash === '') {
+            return;
+        }
+
+        $this->db->query($this->db->update('table.pay_entitlements')->rows([
+            'user_id' => $userId,
+        ])->where('guest_token_hash = ?', $guestTokenHash)
+            ->where('user_id IS NULL'));
     }
 }

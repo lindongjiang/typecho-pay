@@ -49,7 +49,11 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
 
         $request = new \AlipayTradePagePayRequest();
         $request->setNotifyUrl($this->notifyUrl('alipay'));
-        $request->setReturnUrl($this->returnUrl('alipay'));
+        $request->setReturnUrl(
+            $this->returnUrl('alipay')
+            . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
+            . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? ''))
+        );
         $request->setBizContent(json_encode([
             'out_trade_no' => $order['out_trade_no'],
             'product_code' => 'FAST_INSTANT_TRADE_PAY',
@@ -65,7 +69,10 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         $this->requireConfig(['alipayAppId', 'alipayPrivateKey', 'alipayPublicKey']);
         AlipaySdk::ensureAop();
         $signatureOk = $this->aopClient()->rsaCheckV1($post, null, 'RSA2');
-        $status = in_array($post['trade_status'] ?? '', ['TRADE_SUCCESS', 'TRADE_FINISHED'], true) ? 'paid' : 'ignored';
+        $tradeStatus = (string) ($post['trade_status'] ?? '');
+        $status = in_array($tradeStatus, ['TRADE_SUCCESS', 'TRADE_FINISHED'], true)
+            ? 'paid'
+            : strtolower($tradeStatus ?: 'ignored');
         $amount = isset($post['total_amount']) ? (int) round(((float) $post['total_amount']) * 100) : null;
 
         if (($post['app_id'] ?? '') !== $this->config['alipayAppId']) {

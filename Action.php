@@ -24,6 +24,11 @@ class Action extends BaseOptions implements ActionInterface
         $do = (string) $this->request->get('do');
 
         try {
+            if ($do === 'prepare') {
+                $this->prepare();
+                return;
+            }
+
             if ($do === 'create') {
                 $this->create();
                 return;
@@ -65,13 +70,8 @@ class Action extends BaseOptions implements ActionInterface
         }
 
         $config = Plugin::pluginConfig($this->options);
-        $gateway = strtolower((string) $this->request->get('gateway'));
-        if (!in_array($gateway, $config['enabledGateways'], true)) {
-            throw new \InvalidArgumentException('Payment gateway is disabled.');
-        }
-
         $payload = [
-            'gateway' => $gateway,
+            'gateway' => strtolower((string) $this->request->get('gateway')),
             'amount' => (string) $this->request->get('amount'),
             'currency' => strtoupper((string) $this->request->get('currency')),
             'subject' => (string) $this->request->get('subject'),
@@ -88,12 +88,57 @@ class Action extends BaseOptions implements ActionInterface
         }
         (new NonceService(Db::get()))->consume('create', $payload['nonce']);
 
+        $this->createFromPayload($payload, $config);
+    }
+
+    private function prepare(): void
+    {
+        if (!$this->request->isPost()) {
+            throw new \InvalidArgumentException('Payment entry must be prepared by POST.');
+        }
+
+        $config = Plugin::pluginConfig($this->options);
+        $payload = [
+            'gateway' => strtolower((string) $this->request->get('gateway')),
+            'amount' => (string) $this->request->get('amount'),
+            'currency' => strtoupper((string) $this->request->get('currency')),
+            'subject' => (string) $this->request->get('subject'),
+            'biz_type' => (string) $this->request->get('biz_type'),
+            'biz_id' => (string) $this->request->get('biz_id'),
+            'return_to' => (string) $this->request->get('return_to'),
+        ];
+
+        if (!Signer::verify($payload, Plugin::signingSecret($this->options, $config), (string) $this->request->get('entry_signature'))) {
+            throw new \InvalidArgumentException('Invalid payment entry signature.');
+        }
+
+        $this->createFromPayload($payload, $config);
+    }
+
+    private function createFromPayload(array $payload, array $config): void
+    {
+        $gateway = strtolower((string) ($payload['gateway'] ?? ''));
+        if (!in_array($gateway, $config['enabledGateways'], true)) {
+            throw new \InvalidArgumentException('Payment gateway is disabled.');
+        }
+
         $payload['return_to'] = $this->safeReturnTo($payload['return_to']);
         $this->assertGatewayCurrency($gateway, $payload['currency']);
+        $this->assertBizTarget((string) $payload['biz_type'], (string) $payload['biz_id']);
 
         $orderService = new OrderService(Db::get());
+        $accessService = new Services\AccessService(Db::get());
         $userId = $this->user->hasLogin() ? (int) $this->user->uid : null;
-        $guestTokenHash = $userId === null ? GuestToken::hash(GuestToken::getOrCreate()) : null;
+        $guestToken = $userId === null ? GuestToken::getOrCreate() : GuestToken::get();
+        $guestTokenHash = GuestToken::hash($guestToken);
+        if ($userId !== null) {
+            $accessService->claimGuestEntitlements($userId, $guestTokenHash);
+        }
+
+        if ($accessService->canAccess((string) $payload['biz_type'], (int) $payload['biz_id'], $userId, $guestTokenHash)) {
+            throw new \InvalidArgumentException('Content is already purchased.');
+        }
+
         $order = $orderService->create($payload + ['gateway' => $gateway], $userId, $guestTokenHash);
 
         if (!empty($order['reused']) && ($order['pay_url'] || $order['qr_content'])) {
@@ -103,13 +148,19 @@ class Action extends BaseOptions implements ActionInterface
 
         try {
             $adapter = GatewayFactory::make($gateway, $config, $this->options);
+            $orderService->markProcessing($order['out_trade_no']);
             $result = $adapter->create($order);
-            $orderService->attachCreateResult($order['out_trade_no'], $result);
-            $this->renderPayment($order, $result);
         } catch (\Throwable $e) {
-            $orderService->markFailed($order['out_trade_no'], $e->getMessage());
+            if ($this->isDefiniteCreateFailure($e)) {
+                $orderService->markFailed($order['out_trade_no'], $e->getMessage());
+            } else {
+                $orderService->markCreateUnknown($order['out_trade_no'], $e->getMessage());
+            }
             throw $e;
         }
+
+        $orderService->attachCreateResult($order['out_trade_no'], $result);
+        $this->renderPayment($order, $result);
     }
 
     private function notify(): void
@@ -139,6 +190,8 @@ class Action extends BaseOptions implements ActionInterface
 
             if ($result->isPaid()) {
                 $orderService->markPaid($result);
+            } else {
+                $orderService->syncProviderStatus($result);
             }
 
             $this->providerResponse($gateway, $result->signatureOk);
@@ -159,6 +212,11 @@ class Action extends BaseOptions implements ActionInterface
             return;
         }
 
+        if (!$this->canReadOrder($orderService, $order, (string) $this->request->get('poll_token'))) {
+            $this->json(['success' => false, 'error' => 'Order access denied.'], 403);
+            return;
+        }
+
         if (in_array($order['status'], ['pending', 'processing'], true)) {
             try {
                 $order = $this->activeQuery($orderService, $order, $config, false);
@@ -176,9 +234,18 @@ class Action extends BaseOptions implements ActionInterface
         $config = Plugin::pluginConfig($this->options);
         $orderService = new OrderService(Db::get());
         $order = $orderService->findByOutTradeNo($outTradeNo);
+        if ($order && !$this->canReadOrder($orderService, $order, (string) $this->request->get('poll_token'))) {
+            $this->response->setStatus(403);
+            $this->response->throwContent(
+                '<!doctype html><meta charset="utf-8"><title>Payment Return</title><p>订单访问凭证无效。</p>',
+                'text/html'
+            );
+            return;
+        }
+
         if ($order && in_array($order['status'], ['pending', 'processing'], true)) {
             try {
-                $order = $this->activeQuery($orderService, $order, $config, true);
+                $order = $this->activeQuery($orderService, $order, $config, false);
             } catch (\Throwable $e) {
                 error_log('[TypechoPay] Return active query failed: ' . $e->getMessage());
             }
@@ -218,6 +285,8 @@ class Action extends BaseOptions implements ActionInterface
 
     private function renderPayment(array $order, $result): void
     {
+        $this->setNoStoreHeaders();
+
         if ($result->type === 'html' && $result->html !== null) {
             $this->response->throwContent($result->html, 'text/html');
             return;
@@ -228,7 +297,11 @@ class Action extends BaseOptions implements ActionInterface
             return;
         }
 
-        $pollUrl = Common::url('/action/typechopay?do=query&out_trade_no=' . rawurlencode($order['out_trade_no']), $this->options->index);
+        $pollUrl = Common::url(
+            '/action/typechopay?do=query&out_trade_no=' . rawurlencode($order['out_trade_no'])
+            . '&poll_token=' . rawurlencode((string) ($order['poll_token'] ?? '')),
+            $this->options->index
+        );
         $returnTo = $this->safeReturnTo((string) ($order['return_to'] ?? ''));
         $payUrl = $result->payUrl;
         $qrContent = $result->qrContent ?: $payUrl;
@@ -239,19 +312,19 @@ class Action extends BaseOptions implements ActionInterface
             . '</head><body><main class="box">'
             . '<h1>支付订单</h1>'
             . '<p>订单号：' . htmlspecialchars($order['out_trade_no']) . '</p>'
-            . '<p>金额：' . htmlspecialchars($order['currency'] . ' ' . $order['amount']) . '</p>';
+            . '<p>金额：' . htmlspecialchars(Support\Money::formatForDisplay((int) $order['amount'], (string) $order['currency'])) . '</p>';
 
         if ($result->type === 'qr' && $qrContent) {
-            $html .= '<canvas id="typechopay-qrcode" width="240" height="240" data-text="' . htmlspecialchars($qrContent) . '"></canvas>'
+            $html .= '<div id="typechopay-qrcode" data-text="' . htmlspecialchars($qrContent) . '"></div>'
                 . ($payUrl ? '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付 App</a></p>' : '')
                 . '<p class="code">' . htmlspecialchars($qrContent) . '</p>'
                 . '<p class="status" id="typechopay-status">等待支付...</p>'
-                . '<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>'
+                . '<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>'
                 . '<script>(function(){var box=document.getElementById("typechopay-qrcode");'
-                . 'if(window.QRCode&&box){QRCode.toCanvas(box,box.getAttribute("data-text"),{width:240,margin:1});}'
+                . 'if(window.QRCode&&box){new QRCode(box,{text:box.getAttribute("data-text"),width:240,height:240,correctLevel:QRCode.CorrectLevel.M});}'
                 . 'var status=document.getElementById("typechopay-status");'
                 . 'var returnTo=' . json_encode($returnTo) . ';'
-                . 'setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"){location.href=returnTo;}else if(j.data.status==="grant_failed"){status.textContent="支付成功，权益发放失败，请联系站点管理员。";}}}).catch(function(){});},3000);'
+                . 'var timer=setInterval(function(){fetch(' . json_encode($pollUrl) . ',{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(j){if(j&&j.data){status.textContent="订单状态："+j.data.status;if(j.data.status==="paid"){clearInterval(timer);location.href=returnTo;}else if(j.data.status==="grant_failed"){clearInterval(timer);status.textContent="支付成功，权益发放失败，请联系站点管理员。";}else if(j.data.terminal){clearInterval(timer);status.textContent="订单状态："+j.data.status+"，请重新发起支付。";}}}).catch(function(){});},3000);'
                 . '}());</script>';
         } elseif ($payUrl) {
             $html .= '<p><a href="' . htmlspecialchars($payUrl) . '" rel="nofollow">打开支付链接</a></p>';
@@ -284,6 +357,7 @@ class Action extends BaseOptions implements ActionInterface
 
     private function json(array $payload, int $status = 200): void
     {
+        $this->setNoStoreHeaders();
         $this->response->setStatus($status);
         $this->response->throwJson($payload);
     }
@@ -313,6 +387,11 @@ class Action extends BaseOptions implements ActionInterface
 
         if ($result->isPaid()) {
             return $orderService->markPaid($result);
+        }
+
+        $synced = $orderService->syncProviderStatus($result);
+        if ($synced !== null) {
+            return $synced;
         }
 
         return $orderService->findByOutTradeNo($order['out_trade_no']) ?: $order;
@@ -353,6 +432,52 @@ class Action extends BaseOptions implements ActionInterface
         if (!preg_match('/^[a-f0-9]{16}$/', (string) ($payload['nonce'] ?? ''))) {
             throw new \InvalidArgumentException('Invalid payment payload nonce.');
         }
+    }
+
+    private function assertBizTarget(string $bizType, string $bizId): void
+    {
+        if (!preg_match('/^[a-z0-9_.-]{1,32}$/', $bizType)) {
+            throw new \InvalidArgumentException('Invalid business type.');
+        }
+
+        $id = filter_var($bizId, FILTER_VALIDATE_INT);
+        if ($id === false || (int) $id <= 0) {
+            throw new \InvalidArgumentException('Invalid business id.');
+        }
+    }
+
+    private function canReadOrder(OrderService $orderService, array $order, string $pollToken): bool
+    {
+        if ($pollToken !== '' && $orderService->verifyPollToken($order, $pollToken)) {
+            return true;
+        }
+
+        $userId = $this->user->hasLogin() ? (int) $this->user->uid : null;
+        $guestTokenHash = GuestToken::hash(GuestToken::get());
+        if ($userId !== null && $guestTokenHash !== null) {
+            (new Services\AccessService(Db::get()))->claimGuestEntitlements($userId, $guestTokenHash);
+        }
+
+        return $orderService->belongsToOwner($order, $userId, $guestTokenHash);
+    }
+
+    private function isDefiniteCreateFailure(\Throwable $e): bool
+    {
+        if ($e instanceof \InvalidArgumentException) {
+            return true;
+        }
+
+        $message = $e->getMessage();
+        return strpos($message, 'Missing gateway config:') === 0
+            || strpos($message, 'Install ') === 0
+            || strpos($message, ' orders must use ') !== false;
+    }
+
+    private function setNoStoreHeaders(): void
+    {
+        $this->response->setHeader('Cache-Control', 'private, no-store, max-age=0');
+        $this->response->setHeader('Pragma', 'no-cache');
+        $this->response->setHeader('Expires', '0');
     }
 
     private function createResultFromOrder(array $order)

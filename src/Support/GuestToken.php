@@ -21,7 +21,7 @@ final class GuestToken
         }
 
         $token = bin2hex(random_bytes(16));
-        Cookie::set(self::COOKIE, $token, time() + self::TTL);
+        self::setCookie($token);
 
         return $token;
     }
@@ -39,5 +39,35 @@ final class GuestToken
     public static function hash(?string $token): ?string
     {
         return $token === null ? null : hash('sha256', $token);
+    }
+
+    private static function setCookie(string $token): void
+    {
+        $name = Cookie::getPrefix() . self::COOKIE;
+        $_COOKIE[$name] = $token;
+
+        if (headers_sent()) {
+            return;
+        }
+
+        $domain = Cookie::getDomain();
+        $options = [
+            'expires' => time() + self::TTL,
+            'path' => Cookie::getPath(),
+            'secure' => Cookie::getSecure() || self::isHttps(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ];
+        if ($domain !== '') {
+            $options['domain'] = $domain;
+        }
+
+        setcookie($name, $token, $options);
+    }
+
+    private static function isHttps(): bool
+    {
+        return (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
     }
 }

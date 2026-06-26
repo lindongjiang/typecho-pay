@@ -33,5 +33,8 @@ jobs:
             -path './vendor' -prune -o \
             -name '*.php' -print0 | xargs -0 -n1 php -l
 
-      - name: Run signer tests
-        run: php tests/SignerTest.php
+      - name: Run tests
+        run: |
+          for test in tests/*Test.php; do
+            php "$test"
+          done

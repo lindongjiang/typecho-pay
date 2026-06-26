@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fixed PayPay transaction webhook parsing for `merchant_order_id`, `order_id`, `order_amount`, `merchant_id`, and `notification_type`.
+- Added per-order poll tokens for query/return access control and removed `return_to` from public query responses.
+- Added click-time payment entry preparation so cached article HTML no longer embeds short-lived nonce values.
+- Kept orders in `processing` when payment creation result is unknown instead of marking them failed.
+- Synced provider terminal states such as expired, cancelled, failed, closed, revoked, and trade closed.
+- Added server-side duplicate purchase checks, stricter business target validation, guest entitlement claim, and formatted amount display.
 - Fixed PayPay setup links to point to PayPay OPA/Dynamic QR documentation.
 - Clarified that Alipay currently supports ordinary public-key mode only.
 - Clarified CNY shortcode amounts are written in cents and converted to yuan for Alipay.

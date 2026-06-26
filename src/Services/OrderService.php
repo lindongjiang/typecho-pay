@@ -16,12 +16,25 @@ final class OrderService
     private const PAYABLE_STATUSES = ['pending', 'processing'];
     private const GRANTABLE_STATUSES = ['paid_pending_grant', 'grant_failed'];
     private const ACTIVE_QUERY_INTERVAL = 8;
+    private const FINAL_PROVIDER_STATUSES = [
+        'expired' => 'expired',
+        'cancelled' => 'cancelled',
+        'canceled' => 'cancelled',
+        'failed' => 'failed',
+        'closed' => 'closed',
+        'revoked' => 'cancelled',
+        'payerror' => 'failed',
+        'trade_closed' => 'closed',
+    ];
+
+    private static bool $runtimeSchemaChecked = false;
 
     private Db $db;
 
     public function __construct(Db $db)
     {
         $this->db = $db;
+        $this->ensureRuntimeSchema();
     }
 
     public function create(array $input, ?int $userId = null, ?string $guestTokenHash = null): array
@@ -44,6 +57,9 @@ final class OrderService
         if ($subject === '' || $subjectLength > 255) {
             throw new \InvalidArgumentException('Invalid payment subject.');
         }
+        $bizType = $this->assertBizType((string) ($input['biz_type'] ?? 'post'));
+        $bizId = $this->assertBizId($input['biz_id'] ?? null);
+        $pollToken = $this->makePollToken();
 
         $order = [
             'out_trade_no' => $this->makeTradeNo(),
@@ -51,11 +67,12 @@ final class OrderService
             'subject' => $subject,
             'amount' => $amount,
             'currency' => $currency,
-            'biz_type' => trim((string) ($input['biz_type'] ?? 'post')) ?: 'post',
-            'biz_id' => isset($input['biz_id']) ? (int) $input['biz_id'] : null,
+            'biz_type' => $bizType,
+            'biz_id' => $bizId,
             'user_id' => $userId,
             'guest_token_hash' => $guestTokenHash,
             'status' => 'pending',
+            'poll_token_hash' => hash('sha256', $pollToken),
             'platform_trade_no' => null,
             'pay_url' => null,
             'qr_content' => null,
@@ -70,22 +87,30 @@ final class OrderService
 
         $id = $this->db->query($this->db->insert('table.pay_orders')->rows($order));
         $order['id'] = $id;
+        $order['poll_token'] = $pollToken;
 
         return $order;
     }
 
     private function refreshReusableOrder(array $order, string $returnTo): array
     {
-        if ($returnTo === '' || (string) ($order['return_to'] ?? '') === $returnTo) {
-            return $order;
+        $pollToken = $this->makePollToken();
+        $rows = [
+            'poll_token_hash' => hash('sha256', $pollToken),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+
+        if ($returnTo !== '' && (string) ($order['return_to'] ?? '') !== $returnTo) {
+            $rows['return_to'] = $returnTo;
         }
 
-        $this->db->query($this->db->update('table.pay_orders')->rows([
-            'return_to' => $returnTo,
-            'updated_at' => date('Y-m-d H:i:s'),
-        ])->where('out_trade_no = ?', $order['out_trade_no']));
+        $this->db->query($this->db->update('table.pay_orders')->rows($rows)->where('out_trade_no = ?', $order['out_trade_no']));
 
-        $order['return_to'] = $returnTo;
+        if (isset($rows['return_to'])) {
+            $order['return_to'] = $returnTo;
+        }
+        $order['poll_token_hash'] = $rows['poll_token_hash'];
+        $order['poll_token'] = $pollToken;
 
         return $order;
     }
@@ -94,8 +119,8 @@ final class OrderService
     {
         $amount = Money::assertAmount($input['amount'] ?? 0);
         $currency = Money::assertCurrency($input['currency'] ?? 'CNY');
-        $bizType = trim((string) ($input['biz_type'] ?? 'post')) ?: 'post';
-        $bizId = isset($input['biz_id']) ? (int) $input['biz_id'] : null;
+        $bizType = $this->assertBizType((string) ($input['biz_type'] ?? 'post'));
+        $bizId = $this->assertBizId($input['biz_id'] ?? null);
         $gateway = (string) ($input['gateway'] ?? '');
 
         $select = $this->db->select()->from('table.pay_orders')
@@ -108,9 +133,7 @@ final class OrderService
             ->order('created_at', Db::SORT_DESC)
             ->limit(1);
 
-        if ($bizId !== null) {
-            $select->where('biz_id = ?', $bizId);
-        }
+        $select->where('biz_id = ?', $bizId);
 
         if ($userId !== null) {
             $select->where('user_id = ?', $userId);
@@ -126,10 +149,12 @@ final class OrderService
     public function attachCreateResult(string $outTradeNo, PayCreateResult $result): void
     {
         $this->db->query($this->db->update('table.pay_orders')->rows([
+            'status' => 'pending',
             'pay_url' => $result->payUrl,
             'qr_content' => $result->qrContent,
             'updated_at' => date('Y-m-d H:i:s'),
-        ])->where('out_trade_no = ?', $outTradeNo));
+        ])->where('out_trade_no = ?', $outTradeNo)
+            ->where('status IN ?', self::PAYABLE_STATUSES));
     }
 
     public function findByOutTradeNo(string $outTradeNo): ?array
@@ -150,13 +175,7 @@ final class OrderService
             throw new \RuntimeException('Order not found.');
         }
 
-        if ($result->amount !== null && (int) $order['amount'] !== $result->amount) {
-            throw new \RuntimeException('Payment amount mismatch.');
-        }
-
-        if ($result->currency !== null && strtoupper((string) $order['currency']) !== strtoupper($result->currency)) {
-            throw new \RuntimeException('Payment currency mismatch.');
-        }
+        $this->assertResultMatchesOrder($order, $result);
 
         if ($order['status'] === 'paid') {
             return $order;
@@ -248,9 +267,59 @@ final class OrderService
         $this->db->query($this->db->update('table.pay_orders')->rows([
             'status' => 'failed',
             'updated_at' => date('Y-m-d H:i:s'),
-        ])->where('out_trade_no = ?', $outTradeNo)->where('status = ?', 'pending'));
+        ])->where('out_trade_no = ?', $outTradeNo)->where('status IN ?', self::PAYABLE_STATUSES));
 
         $this->recordEvent($outTradeNo, 'system', 'failed', false, ['reason' => $reason]);
+    }
+
+    public function markProcessing(string $outTradeNo): void
+    {
+        if (!$this->isValidTradeNo($outTradeNo)) {
+            return;
+        }
+
+        $this->db->query($this->db->update('table.pay_orders')->rows([
+            'status' => 'processing',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ])->where('out_trade_no = ?', $outTradeNo)->where('status = ?', 'pending'));
+    }
+
+    public function markCreateUnknown(string $outTradeNo, string $reason): void
+    {
+        if (!$this->isValidTradeNo($outTradeNo)) {
+            return;
+        }
+
+        $this->db->query($this->db->update('table.pay_orders')->rows([
+            'status' => 'processing',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ])->where('out_trade_no = ?', $outTradeNo)->where('status IN ?', self::PAYABLE_STATUSES));
+
+        $this->recordEvent($outTradeNo, 'system', 'create_unknown', false, ['reason' => $reason]);
+    }
+
+    public function syncProviderStatus(NotifyResult $result): ?array
+    {
+        $normalized = self::FINAL_PROVIDER_STATUSES[strtolower($result->status)] ?? null;
+        if ($normalized === null) {
+            return null;
+        }
+
+        $order = $this->findByOutTradeNo($result->outTradeNo);
+        if (!$order) {
+            throw new \RuntimeException('Order not found.');
+        }
+
+        $this->assertResultMatchesOrder($order, $result);
+
+        $this->db->query($this->db->update('table.pay_orders')->rows([
+            'status' => $normalized,
+            'platform_trade_no' => $result->platformTradeNo,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ])->where('out_trade_no = ?', $result->outTradeNo)
+            ->where('status IN ?', self::PAYABLE_STATUSES));
+
+        return $this->findByOutTradeNo($result->outTradeNo) ?: array_merge($order, ['status' => $normalized]);
     }
 
     public function recordEvent(
@@ -325,10 +394,33 @@ final class OrderService
                 'status' => $order['status'],
                 'amount' => (int) $order['amount'],
                 'currency' => $order['currency'],
+                'amount_display' => Money::formatForDisplay((int) $order['amount'], (string) $order['currency']),
                 'paid_at' => $order['paid_at'],
-                'return_to' => $order['return_to'] ?? null,
+                'terminal' => $this->isTerminalStatus((string) $order['status']),
             ],
         ];
+    }
+
+    public function verifyPollToken(array $order, string $pollToken): bool
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $pollToken)) {
+            return false;
+        }
+
+        $hash = (string) ($order['poll_token_hash'] ?? '');
+        return $hash !== '' && hash_equals($hash, hash('sha256', $pollToken));
+    }
+
+    public function belongsToOwner(array $order, ?int $userId, ?string $guestTokenHash): bool
+    {
+        if ($userId !== null && isset($order['user_id']) && (int) $order['user_id'] === $userId) {
+            return true;
+        }
+
+        return $guestTokenHash !== null
+            && isset($order['guest_token_hash'])
+            && is_string($order['guest_token_hash'])
+            && hash_equals($order['guest_token_hash'], $guestTokenHash);
     }
 
     private function makeTradeNo(): string
@@ -339,5 +431,67 @@ final class OrderService
     private function isValidTradeNo(string $outTradeNo): bool
     {
         return (bool) preg_match('/^[A-Za-z0-9_-]{8,64}$/', $outTradeNo);
+    }
+
+    private function makePollToken(): string
+    {
+        return bin2hex(random_bytes(32));
+    }
+
+    private function assertBizType(string $bizType): string
+    {
+        $value = trim($bizType) ?: 'post';
+        if (!preg_match('/^[a-z0-9_.-]{1,32}$/', $value)) {
+            throw new \InvalidArgumentException('Invalid business type.');
+        }
+
+        return $value;
+    }
+
+    private function assertBizId($bizId): int
+    {
+        $value = filter_var($bizId, FILTER_VALIDATE_INT);
+        if ($value === false || (int) $value <= 0) {
+            throw new \InvalidArgumentException('Invalid business id.');
+        }
+
+        return (int) $value;
+    }
+
+    private function assertResultMatchesOrder(array $order, NotifyResult $result): void
+    {
+        if ($result->amount !== null && (int) $order['amount'] !== $result->amount) {
+            throw new \RuntimeException('Payment amount mismatch.');
+        }
+
+        if ($result->currency !== null && strtoupper((string) $order['currency']) !== strtoupper($result->currency)) {
+            throw new \RuntimeException('Payment currency mismatch.');
+        }
+    }
+
+    private function isTerminalStatus(string $status): bool
+    {
+        return in_array($status, ['paid', 'grant_failed', 'expired', 'cancelled', 'failed', 'closed'], true);
+    }
+
+    private function ensureRuntimeSchema(): void
+    {
+        if (self::$runtimeSchemaChecked) {
+            return;
+        }
+        self::$runtimeSchemaChecked = true;
+
+        $adapter = strtolower($this->db->getAdapterName());
+        $prefix = $this->db->getPrefix();
+        $isMysql = strpos($adapter, 'mysql') !== false || strpos($adapter, 'mysqli') !== false;
+        $isPgsql = strpos($adapter, 'pgsql') !== false;
+        $ordersTable = $isMysql ? '`' . $prefix . 'pay_orders`' : '"' . $prefix . 'pay_orders"';
+        $string128 = $isMysql || $isPgsql ? 'VARCHAR(128)' : 'TEXT';
+
+        try {
+            $this->db->query("ALTER TABLE {$ordersTable} ADD COLUMN poll_token_hash {$string128} DEFAULT NULL", Db::WRITE, '');
+        } catch (\Throwable $e) {
+            // The column already exists on current installs; this is a best-effort runtime migration for older ones.
+        }
     }
 }
