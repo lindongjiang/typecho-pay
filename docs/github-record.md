@@ -2,6 +2,37 @@
 
 Date: 2026-06-25
 
+## 2026-06-26 Article Editor Paid-Feature Panel (v0.4.1)
+
+### Change
+
+Added the article editing workflow for card-code products: authors can enable TypechoPay directly while writing a Typecho post/page, instead of creating a detached product and manually copying the article cid.
+
+### Scope
+
+- Registered Typecho post/page editor hooks and post/page save hooks.
+- Added a **TypechoPay 付费功能** panel with modes for off, paid reading, and card-code management.
+- Saving the article upserts `pay_products` by `content_id`, validates price/key/purchase rules, and syncs `post_access` / `cardcode` deliverables.
+- The editor can insert `[typechopay_product]` into the article body so the bound product renders even when global auto-injection is disabled.
+- Added quick links from the editor panel to product editing, card inventory, and card sales for already-bound products.
+- Fixed card import preview so it renders without redirecting, and changed confirmation to a temporary `preview_token` instead of hidden raw card lines.
+
+### Boundary
+
+Download, image, video, and membership-free rules are still placeholders. The current implemented editor modes are paid reading and card-code management.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
+After deployment to an already-enabled Typecho site, disable and re-enable TypechoPay once so the new editor hooks are registered.
+
 ## 2026-06-26 Article Product Frontend Loop (v0.4.0)
 
 ### Change

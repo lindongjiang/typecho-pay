@@ -9,6 +9,45 @@ if (!defined('__TYPECHO_ADMIN__')) {
     exit;
 }
 
+if (!function_exists('typechopay_import_preview_path')) {
+    function typechopay_import_preview_path(string $token): string
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+            throw new InvalidArgumentException('无效导入预览令牌。');
+        }
+
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR . 'typechopay-import-' . $token . '.txt';
+    }
+
+    function typechopay_write_import_preview(string $rawLines): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $path = typechopay_import_preview_path($token);
+        if (file_put_contents($path, $rawLines, LOCK_EX) === false) {
+            throw new RuntimeException('无法写入导入预览临时文件。');
+        }
+
+        return $token;
+    }
+
+    function typechopay_read_import_preview(string $token): string
+    {
+        $path = typechopay_import_preview_path($token);
+        if (!is_file($path)) {
+            throw new InvalidArgumentException('导入预览已过期，请重新解析。');
+        }
+
+        $rawLines = file_get_contents($path);
+        if ($rawLines === false) {
+            throw new RuntimeException('无法读取导入预览临时文件。');
+        }
+        @unlink($path);
+
+        return $rawLines;
+    }
+}
+
 $db = Db::get();
 $cardService = new CardCodeService($db);
 $panelUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fproducts.php';
@@ -21,9 +60,11 @@ foreach ($categories as $cat) {
     $categoriesById[(int) $cat['id']] = $cat;
 }
 
+$previewData = null;
 
 if ($request->isPost()) {
     $security->protect();
+    $shouldRedirect = true;
 
     try {
         $action = (string) $request->get('action');
@@ -393,6 +434,7 @@ if ($request->isPost()) {
             }
 
             $parsed = $cardService->parseForPreview($rawLines, $filenameHint);
+            $previewToken = typechopay_write_import_preview($rawLines);
             $previewData = [
                 'product_id' => (int) $productId,
                 'product_key' => $product['product_key'],
@@ -401,9 +443,10 @@ if ($request->isPost()) {
                 'raw_count' => $parsed['raw_count'],
                 'valid_count' => count($parsed['items']),
                 'duplicate_in_file' => $parsed['duplicate_in_file'],
-                'raw_lines' => $rawLines,
+                'preview_token' => $previewToken,
                 'filename_hint' => $filenameHint,
             ];
+            $shouldRedirect = false;
         } elseif ($action === 'import_cards') {
             $productId = filter_var($request->get('product_id'), FILTER_VALIDATE_INT);
             if ($productId === false || (int) $productId <= 0) {
@@ -429,7 +472,10 @@ if ($request->isPost()) {
 
             $rawLines = '';
             $batchName = trim((string) $request->get('batch_name'));
-            if (!empty($_FILES['card_file']) && $_FILES['card_file']['error'] === UPLOAD_ERR_OK) {
+            $previewToken = trim((string) $request->get('preview_token'));
+            if ($previewToken !== '') {
+                $rawLines = typechopay_read_import_preview($previewToken);
+            } elseif (!empty($_FILES['card_file']) && $_FILES['card_file']['error'] === UPLOAD_ERR_OK) {
                 $file = $_FILES['card_file'];
                 if ($file['size'] > 5 * 1024 * 1024) {
                     throw new InvalidArgumentException('上传文件过大（最大 5MB）。');
@@ -474,8 +520,10 @@ if ($request->isPost()) {
         Notice::alloc()->set($e->getMessage(), 'error');
     }
 
-    $response->redirect($panelUrl);
-    return;
+    if ($shouldRedirect) {
+        $response->redirect($panelUrl);
+        return;
+    }
 }
 
 $products = $db->fetchAll($db->select()->from('table.pay_products')->order('sort_order', Db::SORT_ASC)->order('created_at', Db::SORT_DESC));
@@ -791,7 +839,7 @@ include 'menu.php';
                             <input type="hidden" name="product_id" value="<?php echo $previewData['product_id']; ?>">
                             <input type="hidden" name="batch_name" value="<?php echo htmlspecialchars($previewData['batch_name']); ?>">
                             <input type="hidden" name="filename_hint" value="<?php echo htmlspecialchars($previewData['filename_hint']); ?>">
-                            <textarea name="card_lines" style="display:none;"><?php echo htmlspecialchars($previewData['raw_lines']); ?></textarea>
+                            <input type="hidden" name="preview_token" value="<?php echo htmlspecialchars($previewData['preview_token']); ?>">
                             <button class="btn primary" type="submit" onclick="return confirm('确认导入 <?php echo $previewData['valid_count']; ?> 条卡密？');"><?php _e('确认导入'); ?></button>
                             <a href="<?php echo htmlspecialchars($panelUrl); ?>" class="btn"><?php _e('取消'); ?></a>
                         </form>

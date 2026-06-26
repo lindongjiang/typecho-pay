@@ -17,6 +17,7 @@ use TypechoPlugin\TypechoPay\Services\ProductService;
 use TypechoPlugin\TypechoPay\Services\PurchasePolicyService;
 use TypechoPlugin\TypechoPay\Support\GuestToken;
 use Utils\Helper;
+use Widget\Notice;
 use Widget\Options;
 use Widget\User;
 
@@ -52,7 +53,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.0
+ * @version 0.4.1
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -82,6 +83,14 @@ class Plugin implements PluginInterface
         Helper::addPanel($menuIndex, self::SETTINGS_HELP_PANEL, _t('支付设置说明'), _t('TypechoPay'), 'administrator');
 
         \Typecho\Plugin::factory('Widget\Base\Contents')->contentEx = __CLASS__ . '::renderPayShortcodes';
+        \Typecho\Plugin::factory('admin/write-post.php')->content = __CLASS__ . '::renderArticlePayPanel';
+        \Typecho\Plugin::factory('admin/write-page.php')->content = __CLASS__ . '::renderArticlePayPanel';
+        \Typecho\Plugin::factory('Widget\Contents\Post\Edit')->write = __CLASS__ . '::injectArticleProductShortcode';
+        \Typecho\Plugin::factory('Widget\Contents\Page\Edit')->write = __CLASS__ . '::injectArticleProductShortcode';
+        \Typecho\Plugin::factory('Widget\Contents\Post\Edit')->finishSave = __CLASS__ . '::saveArticlePaySettings';
+        \Typecho\Plugin::factory('Widget\Contents\Post\Edit')->finishPublish = __CLASS__ . '::saveArticlePaySettings';
+        \Typecho\Plugin::factory('Widget\Contents\Page\Edit')->finishSave = __CLASS__ . '::saveArticlePaySettings';
+        \Typecho\Plugin::factory('Widget\Contents\Page\Edit')->finishPublish = __CLASS__ . '::saveArticlePaySettings';
 
         return _t('TypechoPay 已启用，订单、商品和交付数据表已准备完成。');
     }
@@ -220,6 +229,183 @@ class Plugin implements PluginInterface
      */
     public static function personalConfig(Form $form)
     {
+    }
+
+    /**
+     * Render TypechoPay settings inside the article/page editor.
+     *
+     * @param object $content
+     */
+    public static function renderArticlePayPanel($content): void
+    {
+        $cid = self::archiveContentId($content);
+        $product = $cid > 0 ? self::findProductByContentId($cid) : null;
+        $handlers = $product ? self::productDeliverableHandlers((int) $product['id']) : [];
+        $hasCardcode = in_array('cardcode', $handlers, true);
+        $hasPostAccess = in_array('post_access', $handlers, true);
+        $mode = 'off';
+        if ($product && (string) ($product['status'] ?? '') === 'active') {
+            $mode = $hasCardcode ? 'cardcode' : ($hasPostAccess ? 'post_access' : 'off');
+        }
+
+        $title = $product ? (string) ($product['title'] ?? '') : '';
+        $amount = $product ? (int) ($product['amount'] ?? 0) : 0;
+        $currency = $product ? (string) ($product['currency'] ?? 'CNY') : 'CNY';
+        $policy = $product ? (string) ($product['purchase_policy'] ?? 'repeatable') : 'repeatable';
+        $maxPerUser = $product ? (int) ($product['max_per_user'] ?? 0) : 0;
+        $allowGuest = $product ? (int) ($product['allow_guest'] ?? 0) : 0;
+        $stockDisplayMode = $product ? (string) ($product['stock_display_mode'] ?? 'exact') : 'exact';
+        $summary = $product ? (string) ($product['summary'] ?? '') : '';
+        $coverUrl = $product ? (string) ($product['cover_url'] ?? '') : '';
+        $productKey = $product ? (string) ($product['product_key'] ?? '') : '';
+        $containsShortcode = is_string($content->text ?? null) && self::containsTypechoPayShortcode((string) $content->text);
+        $shouldInsert = !$containsShortcode && $mode !== 'off';
+
+        $options = Options::alloc();
+        $productsUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fproducts.php';
+        $inventoryUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-inventory.php';
+        $salesUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-sales.php';
+        if ($product) {
+            $productsUrl .= '&edit=' . (int) $product['id'];
+            $inventoryUrl .= '&product_id=' . (int) $product['id'];
+            $salesUrl .= '&product_id=' . (int) $product['id'];
+        }
+
+        ?>
+        <section class="typechopay-editor-panel">
+            <style>
+                .typechopay-editor-panel{margin:18px 0 22px;padding:16px;border:1px solid #d9e2ef;border-radius:8px;background:#fff}
+                .typechopay-editor-panel h3{margin:0 0 14px;font-size:16px}
+                .typechopay-editor-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0}
+                .typechopay-editor-row strong{min-width:76px;color:#0f62fe}
+                .typechopay-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+                .typechopay-editor-grid label{display:block;font-weight:600;margin-bottom:4px}
+                .typechopay-editor-grid input,.typechopay-editor-grid select{max-width:100%}
+                .typechopay-editor-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+                @media(max-width:768px){.typechopay-editor-grid{grid-template-columns:1fr}}
+            </style>
+            <h3><?php _e('TypechoPay 付费功能'); ?></h3>
+            <div class="typechopay-editor-row">
+                <strong><?php _e('付费模式'); ?></strong>
+                <label><input type="radio" name="typechopay_pay_mode" value="off" <?php if ($mode === 'off') echo 'checked'; ?>> <?php _e('关闭'); ?></label>
+                <label><input type="radio" name="typechopay_pay_mode" value="post_access" <?php if ($mode === 'post_access') echo 'checked'; ?>> <?php _e('付费阅读'); ?></label>
+                <label title="<?php _e('下载交付将在后续版本加入'); ?>"><input type="radio" disabled> <?php _e('付费下载'); ?></label>
+                <label title="<?php _e('图片交付将在后续版本加入'); ?>"><input type="radio" disabled> <?php _e('付费图片'); ?></label>
+                <label title="<?php _e('视频交付将在后续版本加入'); ?>"><input type="radio" disabled> <?php _e('付费视频'); ?></label>
+                <label><input type="radio" name="typechopay_pay_mode" value="cardcode" <?php if ($mode === 'cardcode') echo 'checked'; ?>> <?php _e('卡密管理'); ?></label>
+            </div>
+            <div class="typechopay-editor-row">
+                <strong><?php _e('购买权限'); ?></strong>
+                <label><input type="radio" name="typechopay_purchase_permission" value="all" <?php if ($allowGuest === 1) echo 'checked'; ?>> <?php _e('所有人可购买'); ?></label>
+                <label><input type="radio" name="typechopay_purchase_permission" value="login" <?php if ($allowGuest !== 1) echo 'checked'; ?>> <?php _e('仅登录用户'); ?></label>
+            </div>
+            <div class="typechopay-editor-grid">
+                <p>
+                    <label><?php _e('商品标题'); ?></label>
+                    <input type="text" name="typechopay_product_title" value="<?php echo htmlspecialchars($title); ?>" placeholder="<?php _e('留空则使用文章标题'); ?>" class="w-100">
+                </p>
+                <p>
+                    <label><?php _e('商品标识'); ?></label>
+                    <input type="text" name="typechopay_product_key" value="<?php echo htmlspecialchars($productKey); ?>" placeholder="<?php echo $cid > 0 ? 'post-' . (int) $cid : _t('保存后自动生成'); ?>" class="w-100">
+                </p>
+                <p>
+                    <label><?php _e('价格'); ?></label>
+                    <input type="number" name="typechopay_amount" min="1" value="<?php echo $amount > 0 ? $amount : ''; ?>" placeholder="<?php _e('CNY 用分，JPY 用日元'); ?>">
+                    <select name="typechopay_currency">
+                        <option value="CNY" <?php if ($currency === 'CNY') echo 'selected'; ?>>CNY</option>
+                        <option value="JPY" <?php if ($currency === 'JPY') echo 'selected'; ?>>JPY</option>
+                    </select>
+                </p>
+                <p>
+                    <label><?php _e('购买策略'); ?></label>
+                    <select name="typechopay_purchase_policy">
+                        <option value="repeatable" <?php if ($policy === 'repeatable') echo 'selected'; ?>><?php _e('可重复购买'); ?></option>
+                        <option value="once" <?php if ($policy === 'once') echo 'selected'; ?>><?php _e('每人限购一次'); ?></option>
+                        <option value="limited" <?php if ($policy === 'limited') echo 'selected'; ?>><?php _e('每人限购 N 次'); ?></option>
+                    </select>
+                    <input type="number" name="typechopay_max_per_user" min="1" value="<?php echo $maxPerUser > 0 ? $maxPerUser : ''; ?>" placeholder="N" style="width:70px">
+                </p>
+                <p>
+                    <label><?php _e('库存显示'); ?></label>
+                    <select name="typechopay_stock_display_mode">
+                        <option value="exact" <?php if ($stockDisplayMode === 'exact') echo 'selected'; ?>><?php _e('精确库存'); ?></option>
+                        <option value="range" <?php if ($stockDisplayMode === 'range') echo 'selected'; ?>><?php _e('区间库存'); ?></option>
+                        <option value="hidden" <?php if ($stockDisplayMode === 'hidden') echo 'selected'; ?>><?php _e('隐藏库存'); ?></option>
+                    </select>
+                </p>
+                <p>
+                    <label><?php _e('商品封面 URL'); ?></label>
+                    <input type="text" name="typechopay_cover_url" value="<?php echo htmlspecialchars($coverUrl); ?>" placeholder="<?php _e('留空则由主题文章封面负责'); ?>" class="w-100">
+                </p>
+                <p style="grid-column:1/-1">
+                    <label><?php _e('商品摘要'); ?></label>
+                    <input type="text" name="typechopay_summary" value="<?php echo htmlspecialchars($summary); ?>" placeholder="<?php _e('留空则前台使用默认自动售卡说明'); ?>" class="w-100">
+                </p>
+            </div>
+            <div class="typechopay-editor-row">
+                <label><input type="checkbox" name="typechopay_unlock_article" value="1" <?php if ($hasPostAccess || $mode === 'post_access') echo 'checked'; ?>> <?php _e('购买后解锁本文'); ?></label>
+                <label><input type="checkbox" name="typechopay_insert_shortcode" value="1" <?php if ($shouldInsert) echo 'checked'; ?>> <?php _e('保存时在正文开头插入购买模块'); ?></label>
+                <?php if ($containsShortcode): ?><small><?php _e('正文已包含 TypechoPay 短代码，不会重复插入。'); ?></small><?php endif; ?>
+            </div>
+            <div class="typechopay-editor-actions">
+                <?php if ($product): ?>
+                    <a class="btn btn-xs" href="<?php echo htmlspecialchars($productsUrl); ?>"><?php _e('编辑商品'); ?></a>
+                    <?php if ($hasCardcode): ?>
+                        <a class="btn btn-xs" href="<?php echo htmlspecialchars($inventoryUrl); ?>"><?php _e('查看库存'); ?></a>
+                        <a class="btn btn-xs" href="<?php echo htmlspecialchars($salesUrl); ?>"><?php _e('查看销售'); ?></a>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <small><?php _e('首次保存文章后会自动创建绑定商品，之后可导入卡密和查看库存。'); ?></small>
+                <?php endif; ?>
+            </div>
+        </section>
+        <?php
+    }
+
+    public static function injectArticleProductShortcode(array $contents, $widget, ...$ignored): array
+    {
+        $mode = (string) $widget->request->get('typechopay_pay_mode');
+        if (!in_array($mode, ['post_access', 'cardcode'], true)) {
+            return $contents;
+        }
+
+        if ((string) $widget->request->get('typechopay_insert_shortcode') !== '1') {
+            return $contents;
+        }
+
+        try {
+            Support\Money::assertAmount($widget->request->get('typechopay_amount'));
+        } catch (\Throwable $e) {
+            return $contents;
+        }
+
+        $text = (string) ($contents['text'] ?? '');
+        if ($text === '' || self::containsTypechoPayShortcode($text)) {
+            return $contents;
+        }
+
+        $contents['text'] = self::prependProductShortcode($text);
+        return $contents;
+    }
+
+    public static function saveArticlePaySettings(array $contents, $widget): void
+    {
+        $mode = (string) $widget->request->get('typechopay_pay_mode');
+        if (!in_array($mode, ['off', 'post_access', 'cardcode'], true)) {
+            return;
+        }
+
+        $cid = (int) ($widget->cid ?? 0);
+        if ($cid <= 0) {
+            return;
+        }
+
+        try {
+            self::upsertArticleProduct($cid, $contents, $widget, $mode);
+        } catch (\Throwable $e) {
+            error_log('[TypechoPay] Failed to save article pay settings: ' . $e->getMessage());
+            Notice::alloc()->set(_t('TypechoPay 付费设置保存失败：%s', $e->getMessage()), 'error');
+        }
     }
 
     /**
@@ -818,6 +1004,234 @@ class Plugin implements PluginInterface
         }
 
         return implode('', $buttons);
+    }
+
+    private static function prependProductShortcode(string $text): string
+    {
+        $shortcode = "[typechopay_product]\n\n";
+        $markdownPrefix = '<!--markdown-->';
+        if (strpos($text, $markdownPrefix) === 0) {
+            return $markdownPrefix . "\n" . $shortcode . substr($text, strlen($markdownPrefix));
+        }
+
+        return $shortcode . $text;
+    }
+
+    private static function upsertArticleProduct(int $cid, array $contents, $widget, string $mode): void
+    {
+        $db = Db::get();
+        $product = self::findProductByContentId($cid);
+        $now = date('Y-m-d H:i:s');
+
+        if ($mode === 'off') {
+            if ($product && (string) ($product['status'] ?? '') !== 'paused') {
+                $db->query($db->update('table.pay_products')->rows([
+                    'status' => 'paused',
+                    'version' => (int) ($product['version'] ?? 1) + 1,
+                    'updated_at' => $now,
+                ])->where('id = ?', (int) $product['id']));
+            }
+            return;
+        }
+
+        $title = trim((string) $widget->request->get('typechopay_product_title'));
+        if ($title === '') {
+            $title = trim((string) ($contents['title'] ?? ''));
+        }
+        $titleLength = function_exists('mb_strlen') ? mb_strlen($title) : strlen($title);
+        if ($title === '' || $titleLength > 255) {
+            throw new \InvalidArgumentException('请填写 1-255 字的商品标题。');
+        }
+
+        $contentType = (string) ($contents['type'] ?? 'post');
+        $deliverableTargetType = strpos($contentType, 'page') === 0 ? 'page' : 'post';
+
+        $productKey = trim((string) $widget->request->get('typechopay_product_key'));
+        if ($productKey === '') {
+            $productKey = $deliverableTargetType . '-' . $cid;
+        }
+        if (!preg_match('/^[a-zA-Z0-9_.:-]{1,128}$/', $productKey)) {
+            throw new \InvalidArgumentException('商品标识只允许字母、数字、点、横线、下划线和冒号。');
+        }
+
+        $duplicate = $db->fetchRow(
+            $db->select('id')->from('table.pay_products')
+                ->where('product_key = ?', $productKey)
+                ->limit(1)
+        );
+        if ($duplicate && (!$product || (int) $duplicate['id'] !== (int) $product['id'])) {
+            throw new \InvalidArgumentException('商品标识已存在，请换一个标识。');
+        }
+
+        $amount = Support\Money::assertAmount($widget->request->get('typechopay_amount'));
+        $currency = Support\Money::assertCurrency($widget->request->get('typechopay_currency') ?: 'CNY');
+        $policy = strtolower(trim((string) $widget->request->get('typechopay_purchase_policy'))) ?: 'repeatable';
+        if (!in_array($policy, ['once', 'repeatable', 'limited'], true)) {
+            throw new \InvalidArgumentException('购买策略无效。');
+        }
+        $maxPerUser = filter_var($widget->request->get('typechopay_max_per_user'), FILTER_VALIDATE_INT);
+        $maxPerUser = ($policy === 'limited' && $maxPerUser !== false && (int) $maxPerUser > 0) ? (int) $maxPerUser : null;
+        $allowGuest = (string) $widget->request->get('typechopay_purchase_permission') === 'all' ? 1 : 0;
+        $stockDisplayMode = in_array((string) $widget->request->get('typechopay_stock_display_mode'), ['exact', 'range', 'hidden'], true)
+            ? (string) $widget->request->get('typechopay_stock_display_mode')
+            : 'exact';
+        $coverUrl = trim((string) $widget->request->get('typechopay_cover_url'));
+        $coverUrl = $coverUrl !== '' ? $coverUrl : null;
+        $summary = trim((string) $widget->request->get('typechopay_summary'));
+        $summary = $summary !== '' ? $summary : null;
+        $stockPolicy = $mode === 'cardcode' ? 'reserve_on_order' : 'none';
+        $enablePostAccess = $mode === 'post_access'
+            || (string) $widget->request->get('typechopay_unlock_article') === '1';
+        $enableCardcode = $mode === 'cardcode';
+
+        $oldHandlers = $product ? self::productDeliverableHandlers((int) $product['id']) : [];
+        $newHandlers = [];
+        if ($enablePostAccess) {
+            $newHandlers[] = 'post_access';
+        }
+        if ($enableCardcode) {
+            $newHandlers[] = 'cardcode';
+        }
+        sort($oldHandlers);
+        sort($newHandlers);
+
+        $versionBump = 1;
+        if ($product) {
+            $oldMaxPerUser = isset($product['max_per_user']) && (int) $product['max_per_user'] > 0
+                ? (int) $product['max_per_user']
+                : null;
+            $versionBump = ((string) ($product['product_key'] ?? '') !== $productKey
+                || (int) ($product['amount'] ?? 0) !== $amount
+                || (string) ($product['currency'] ?? '') !== $currency
+                || (string) ($product['status'] ?? '') !== 'active'
+                || (int) ($product['allow_guest'] ?? 1) !== $allowGuest
+                || (string) ($product['purchase_policy'] ?? '') !== $policy
+                || $oldMaxPerUser !== $maxPerUser
+                || (int) ($product['content_id'] ?? 0) !== $cid
+                || (string) ($product['stock_policy'] ?? '') !== $stockPolicy
+                || $oldHandlers !== $newHandlers) ? 1 : 0;
+        }
+
+        $db->query('START TRANSACTION', Db::WRITE, '');
+        try {
+            if ($product) {
+                $productId = (int) $product['id'];
+                $db->query($db->update('table.pay_products')->rows([
+                    'product_key' => $productKey,
+                    'title' => $title,
+                    'content_id' => $cid,
+                    'amount' => $amount,
+                    'currency' => $currency,
+                    'status' => 'active',
+                    'allow_guest' => $allowGuest,
+                    'purchase_policy' => $policy,
+                    'max_per_user' => $maxPerUser,
+                    'stock_policy' => $stockPolicy,
+                    'cover_url' => $coverUrl,
+                    'summary' => $summary,
+                    'stock_display_mode' => $stockDisplayMode,
+                    'version' => (int) ($product['version'] ?? 1) + $versionBump,
+                    'updated_at' => $now,
+                ])->where('id = ?', $productId));
+            } else {
+                $productId = (int) $db->query($db->insert('table.pay_products')->rows([
+                    'product_key' => $productKey,
+                    'title' => $title,
+                    'content_id' => $cid,
+                    'amount' => $amount,
+                    'currency' => $currency,
+                    'status' => 'active',
+                    'allow_guest' => $allowGuest,
+                    'purchase_policy' => $policy,
+                    'max_per_user' => $maxPerUser,
+                    'duration_seconds' => null,
+                    'version' => 1,
+                    'stock_policy' => $stockPolicy,
+                    'category_id' => null,
+                    'cover_url' => $coverUrl,
+                    'summary' => $summary,
+                    'description' => null,
+                    'sort_order' => 0,
+                    'is_featured' => 0,
+                    'stock_display_mode' => $stockDisplayMode,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]));
+            }
+
+            $db->query($db->delete('table.pay_product_deliverables')->where('product_id = ?', $productId));
+            if ($enablePostAccess) {
+                $db->query($db->insert('table.pay_product_deliverables')->rows([
+                    'product_id' => $productId,
+                    'handler' => 'post_access',
+                    'target_type' => $deliverableTargetType,
+                    'target_id' => $cid,
+                    'target_key' => null,
+                    'config_json' => null,
+                    'sort_order' => 10,
+                    'enabled' => 1,
+                ]));
+            }
+            if ($enableCardcode) {
+                $db->query($db->insert('table.pay_product_deliverables')->rows([
+                    'product_id' => $productId,
+                    'handler' => 'cardcode',
+                    'target_type' => 'cardcode',
+                    'target_id' => null,
+                    'target_key' => 'default',
+                    'config_json' => null,
+                    'sort_order' => 20,
+                    'enabled' => 1,
+                ]));
+            }
+            $db->query('COMMIT', Db::WRITE, '');
+        } catch (\Throwable $e) {
+            try {
+                $db->query('ROLLBACK', Db::WRITE, '');
+            } catch (\Throwable $rollback) {
+            }
+            throw $e;
+        }
+    }
+
+    private static function findProductByContentId(int $contentId): ?array
+    {
+        if ($contentId <= 0) {
+            return null;
+        }
+
+        $row = Db::get()->fetchRow(
+            Db::get()->select()->from('table.pay_products')
+                ->where('content_id = ?', $contentId)
+                ->order('id', Db::SORT_DESC)
+                ->limit(1)
+        );
+
+        return $row ?: null;
+    }
+
+    private static function productDeliverableHandlers(int $productId): array
+    {
+        if ($productId <= 0) {
+            return [];
+        }
+
+        $rows = Db::get()->fetchAll(
+            Db::get()->select('handler')->from('table.pay_product_deliverables')
+                ->where('product_id = ?', $productId)
+                ->where('enabled = ?', 1)
+                ->order('sort_order', Db::SORT_ASC)
+        );
+
+        $handlers = [];
+        foreach ($rows as $row) {
+            $handler = (string) ($row['handler'] ?? '');
+            if ($handler !== '') {
+                $handlers[] = $handler;
+            }
+        }
+
+        return array_values(array_unique($handlers));
     }
 
     /**

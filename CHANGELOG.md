@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-06-26
+
+### Article editor
+
+- Added a TypechoPay paid-feature panel to the Typecho post/page editor.
+- Added editor-side modes for off, paid reading, and card-code management, with download/image/video shown as reserved modes.
+- Saving an article can now upsert the bound `pay_products` row by `content_id`, maintain card-code / post-access deliverables, and optionally insert `[typechopay_product]` into the article body.
+- Added quick links from the editor panel to edit the bound product, view card inventory, and view card sales.
+
+### Card import
+
+- Fixed card import preview so `preview_cards` stays on the page instead of redirecting before the preview can render.
+- Changed preview confirmation to use a temporary `preview_token` instead of embedding raw card lines in hidden form fields.
+
 ## 0.4.0 - 2026-06-26
 
 ### Article products
