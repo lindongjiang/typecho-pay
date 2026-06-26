@@ -1119,14 +1119,10 @@ class Plugin implements PluginInterface
         }
 
         // v5: Add unique constraint on reserved_order_id to prevent one order reserving multiple cards.
-        try {
-            if ($isMysql) {
-                $db->query("ALTER TABLE {$cardItemsTable} ADD UNIQUE KEY `{$reservedOrderIndex}` (reserved_order_id)", Db::WRITE, '');
-            } else {
-                $db->query("CREATE UNIQUE INDEX {$reservedOrderIndex} ON {$cardItemsTable} (reserved_order_id)", Db::WRITE, '');
-            }
-        } catch (\Throwable $e) {
-            error_log('[TypechoPay] Could not add unique constraint on reserved_order_id: ' . $e->getMessage());
+        if ($isMysql) {
+            self::trySchema($db, "ALTER TABLE {$cardItemsTable} ADD UNIQUE KEY `{$reservedOrderIndex}` (reserved_order_id)");
+        } else {
+            self::trySchema($db, "CREATE UNIQUE INDEX {$reservedOrderIndex} ON {$cardItemsTable} (reserved_order_id)");
         }
 
         // v7: Add indexes for card sales and delivery queries.
