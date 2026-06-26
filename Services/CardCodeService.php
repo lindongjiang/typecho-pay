@@ -22,15 +22,32 @@ final class CardCodeService
     }
 
     /**
+     * Parse raw input lines without importing — used for preview.
+     *
+     * @param string $rawLines
+     * @param string $filenameHint For CSV detection
+     * @return array{items:array, raw_count:int, duplicate_in_file:int}
+     */
+    public function parseForPreview(string $rawLines, string $filenameHint = ''): array
+    {
+        $ext = strtolower(pathinfo($filenameHint, PATHINFO_EXTENSION));
+        if ($ext === 'csv') {
+            return $this->parseCsvForPreview($rawLines);
+        }
+        return $this->parseLines($rawLines);
+    }
+
+    /**
      * Import card codes for a product.
      *
      * @param int $productId
      * @param string $batchName
      * @param string $rawLines Raw text (from textarea or file content)
      * @param int|null $importedBy
+     * @param string $filenameHint For CSV detection
      * @return array{batch_id:int, imported:int, duplicates:int, duplicate_in_file:int, raw_count:int, total:int}
      */
-    public function importBatch(int $productId, string $batchName, string $rawLines, ?int $importedBy = null): array
+    public function importBatch(int $productId, string $batchName, string $rawLines, ?int $importedBy = null, string $filenameHint = ''): array
     {
         if ($productId <= 0) {
             throw new \InvalidArgumentException('Invalid product id.');
@@ -42,7 +59,8 @@ final class CardCodeService
             throw new \InvalidArgumentException('Batch name is too long (max 128 characters).');
         }
 
-        $parsed = $this->parseLines($rawLines);
+        $ext = strtolower(pathinfo($filenameHint, PATHINFO_EXTENSION));
+        $parsed = ($ext === 'csv') ? $this->parseCsvForPreview($rawLines) : $this->parseLines($rawLines);
         $items = $parsed['items'];
         if (!$items) {
             throw new \InvalidArgumentException('No card codes to import.');
@@ -102,6 +120,7 @@ final class CardCodeService
                             'batch_id' => (int) $batchId,
                             'code_ciphertext' => $codeCiphertext,
                             'secret_ciphertext' => $secretCiphertext,
+                            'code_mask' => $this->maskCode($item['code']),
                             'fingerprint' => $fp,
                             'status' => 'available',
                             'reserved_order_id' => null,
@@ -214,6 +233,50 @@ final class CardCodeService
         $rows = $this->db->fetchAll(
             $select->order('id', Db::SORT_DESC)->limit($perPage)->offset($offset)
         );
+
+        return ['rows' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage];
+    }
+
+    /**
+     * Paginated abnormal orders — paid but delivery failed/partial/pending.
+     * These are orders where the user paid but card delivery did not complete.
+     */
+    public function abnormalOrders(int $productId = 0, int $page = 1, int $perPage = 50): array
+    {
+        // Count orders with payment_status = 'paid' and fulfillment_status in problem states.
+        $countSelect = $this->db->select('COUNT(*) AS cnt')->from('table.pay_orders')
+            ->where('payment_status = ?', 'paid')
+            ->where('fulfillment_status IN ?', ['failed', 'partial', 'pending']);
+        if ($productId > 0) {
+            $countSelect->where('product_id = ?', $productId);
+        }
+        $countRow = $this->db->fetchRow($countSelect);
+        $total = (int) ($countRow['cnt'] ?? 0);
+
+        $offset = max(0, ($page - 1) * $perPage);
+        $select = $this->db->select()->from('table.pay_orders')
+            ->where('payment_status = ?', 'paid')
+            ->where('fulfillment_status IN ?', ['failed', 'partial', 'pending'])
+            ->order('created_at', Db::SORT_DESC)
+            ->limit($perPage)
+            ->offset($offset);
+        if ($productId > 0) {
+            $select->where('product_id = ?', $productId);
+        }
+        $orders = $this->db->fetchAll($select);
+
+        $rows = [];
+        foreach ($orders as $order) {
+            $fulfillments = $this->db->fetchAll(
+                $this->db->select()->from('table.pay_fulfillments')
+                    ->where('order_id = ?', (int) $order['id'])
+                    ->order('id', Db::SORT_ASC)
+            );
+            $rows[] = [
+                'order' => $order,
+                'fulfillments' => $fulfillments,
+            ];
+        }
 
         return ['rows' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage];
     }
@@ -624,9 +687,73 @@ final class CardCodeService
         return $existing;
     }
 
+    /**
+     * Generate a display-safe mask for a card code.
+     * Shows first 4 + **** + last 4 characters.
+     */
+    private function maskCode(string $code): string
+    {
+        $len = function_exists('mb_strlen') ? mb_strlen($code) : strlen($code);
+        if ($len <= 8) {
+            return str_repeat('*', max(4, $len));
+        }
+        $start = function_exists('mb_substr') ? mb_substr($code, 0, 4) : substr($code, 0, 4);
+        $end = function_exists('mb_substr') ? mb_substr($code, -4) : substr($code, -4);
+        return $start . '****' . $end;
+    }
+
+    /**
+     * Parse CSV content using fgetcsv for proper quoting/escaping support.
+     * Each row: code[,secret]
+     */
+    private function parseCsvForPreview(string $rawLines): array
+    {
+        $items = [];
+        $seen = [];
+        $rawCount = 0;
+        $duplicateInFile = 0;
+
+        $stream = fopen('php://temp', 'r+');
+        fwrite($stream, $rawLines);
+        rewind($stream);
+
+        while (($row = fgetcsv($stream, 0, ',', '"', '\\')) !== false) {
+            $rawCount++;
+            $row = array_map('trim', $row);
+            $row = array_filter($row, fn($v) => $v !== '');
+            if (!$row) {
+                continue;
+            }
+
+            $code = $row[0] ?? '';
+            $secret = $row[1] ?? null;
+            if ($code === '') {
+                continue;
+            }
+
+            $this->assertCodeLength($code, $secret);
+            $key = hash('sha256', $code . "\0" . (string) $secret);
+            if (isset($seen[$key])) {
+                $duplicateInFile++;
+                continue;
+            }
+
+            $seen[$key] = true;
+            $items[] = ['code' => $code, 'secret' => $secret];
+        }
+
+        fclose($stream);
+
+        return [
+            'items' => $items,
+            'raw_count' => $rawCount,
+            'duplicate_in_file' => $duplicateInFile,
+        ];
+    }
+
     private function parseLine(string $line): array
     {
-        foreach (["\t", '----', '---', '|', ','] as $separator) {
+        foreach (["\t", '----', '---', '|'] as $separator) {
             if (strpos($line, $separator) !== false) {
                 [$code, $secret] = array_map('trim', explode($separator, $line, 2));
                 if ($code === '') {

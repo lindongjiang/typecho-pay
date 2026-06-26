@@ -160,12 +160,15 @@ include 'menu.php';
                     <?php endif; ?>
                     <?php foreach ($rows as $row): ?>
                         <?php
-                        // Mask the card code for display.
-                        $code = (string) ($row['code_ciphertext'] ?? '');
-                        $masked = '****';
-                        if ($code !== '') {
-                            $prefix = function_exists('mb_substr') ? mb_substr($code, 0, 8) : substr($code, 0, 8);
-                            $masked = $prefix . '****';
+                        // Use code_mask if available, otherwise fall back to ciphertext prefix.
+                        $masked = (string) ($row['code_mask'] ?? '');
+                        if ($masked === '') {
+                            $code = (string) ($row['code_ciphertext'] ?? '');
+                            $masked = '****';
+                            if ($code !== '') {
+                                $prefix = function_exists('mb_substr') ? mb_substr($code, 0, 8) : substr($code, 0, 8);
+                                $masked = $prefix . '****';
+                            }
                         }
                         ?>
                         <tr>

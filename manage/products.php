@@ -56,8 +56,14 @@ if ($request->isPost()) {
             $now = date('Y-m-d H:i:s');
             $db->query('START TRANSACTION', Db::WRITE, '');
             try {
-                // Update product; increment version on price/policy change.
-                $versionBump = ((int) $product['amount'] !== $amount || (string) $product['currency'] !== $currency || (string) $product['purchase_policy'] !== $policy) ? 1 : 0;
+                // Update product; increment version when amount, currency, policy, or deliverables change.
+                $oldContentId = (int) ($product['content_id'] ?? 0);
+                $versionBump = ((int) $product['amount'] !== $amount
+                    || (string) $product['currency'] !== $currency
+                    || (string) $product['purchase_policy'] !== $policy
+                    || $oldContentId !== (int) ($contentId ?? 0)
+                    || $hasPostAccess !== $enablePostAccess
+                    || $hasCardcode !== $enableCardcode) ? 1 : 0;
                 $db->query($db->update('table.pay_products')->rows([
                     'title' => $title,
                     'amount' => $amount,
@@ -192,6 +198,73 @@ if ($request->isPost()) {
             }
 
             Notice::alloc()->set(_t('商品已创建，可使用短代码 [typechopay product="%s"]。', $productKey), 'success');
+        } elseif ($action === 'preview_cards') {
+            $productId = filter_var($request->get('product_id'), FILTER_VALIDATE_INT);
+            if ($productId === false || (int) $productId <= 0) {
+                throw new InvalidArgumentException('请选择卡密商品。');
+            }
+
+            $product = $db->fetchRow(
+                $db->select()->from('table.pay_products')->where('id = ?', (int) $productId)->limit(1)
+            );
+            if (!$product) {
+                throw new InvalidArgumentException('商品不存在。');
+            }
+            $hasCardcode = $db->fetchRow(
+                $db->select('id')->from('table.pay_product_deliverables')
+                    ->where('product_id = ?', (int) $productId)
+                    ->where('handler = ?', 'cardcode')
+                    ->where('enabled = ?', 1)
+                    ->limit(1)
+            );
+            if (!$hasCardcode) {
+                throw new InvalidArgumentException('该商品未启用卡密交付。');
+            }
+
+            $rawLines = '';
+            $filenameHint = '';
+            $batchName = trim((string) $request->get('batch_name'));
+            if (!empty($_FILES['card_file']) && $_FILES['card_file']['error'] === UPLOAD_ERR_OK) {
+                $file = $_FILES['card_file'];
+                if ($file['size'] > 5 * 1024 * 1024) {
+                    throw new InvalidArgumentException('上传文件过大（最大 5MB）。');
+                }
+                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                if (!in_array($ext, ['txt', 'csv', 'tsv'], true)) {
+                    throw new InvalidArgumentException('仅支持 .txt、.csv、.tsv 文件。');
+                }
+                $rawLines = file_get_contents($file['tmp_name']);
+                if ($rawLines === false) {
+                    throw new InvalidArgumentException('无法读取上传文件。');
+                }
+                $rawLines = preg_replace('/^\xEF\xBB\xBF/', '', $rawLines);
+                $filenameHint = $file['name'] ?? '';
+                if ($batchName === '') {
+                    $batchName = 'file-' . ($file['name'] ?? date('YmdHis'));
+                }
+            } else {
+                $rawLines = (string) $request->get('card_lines');
+            }
+
+            if (trim($rawLines) === '') {
+                throw new InvalidArgumentException('请输入卡密内容或上传文件。');
+            }
+
+            $parsed = $cardService->parseForPreview($rawLines, $filenameHint);
+            // Store raw lines in session-like hidden field for confirm step.
+            $previewData = [
+                'product_id' => (int) $productId,
+                'product_key' => $product['product_key'],
+                'product_title' => $product['title'],
+                'batch_name' => $batchName,
+                'raw_count' => $parsed['raw_count'],
+                'valid_count' => count($parsed['items']),
+                'duplicate_in_file' => $parsed['duplicate_in_file'],
+                'raw_lines' => $rawLines,
+                'filename_hint' => $filenameHint,
+            ];
+            // We'll pass raw_lines via a hidden textarea in the confirm form.
+            // For very large inputs, this is still within POST limits (5MB file → ~5MB text).
         } elseif ($action === 'import_cards') {
             $productId = filter_var($request->get('product_id'), FILTER_VALIDATE_INT);
             if ($productId === false || (int) $productId <= 0) {
@@ -245,11 +318,15 @@ if ($request->isPost()) {
                 throw new InvalidArgumentException('请输入卡密内容或上传文件。');
             }
 
+            $filenameHint = !empty($_FILES['card_file']) && $_FILES['card_file']['error'] === UPLOAD_ERR_OK
+                ? ($_FILES['card_file']['name'] ?? '')
+                : trim((string) $request->get('filename_hint'));
             $result = $cardService->importBatch(
                 (int) $productId,
                 $batchName,
                 $rawLines,
-                $user->hasLogin() ? (int) $user->uid : null
+                $user->hasLogin() ? (int) $user->uid : null,
+                $filenameHint
             );
             Notice::alloc()->set(
                 _t('卡密导入完成：原始 %d 条，文件内重复 %d 条，成功 %d 条，数据库重复 %d 条。',
@@ -401,8 +478,37 @@ include 'menu.php';
 
         <div class="table-description" style="margin-top:30px;">
             <h3><?php _e('导入卡密'); ?></h3>
+            <?php if (!empty($previewData)): ?>
+                <!-- Preview result -->
+                <div style="padding:16px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;margin-bottom:16px;">
+                    <h4><?php _e('预览结果'); ?></h4>
+                    <table style="margin:12px 0;">
+                        <tr><td style="padding:4px 16px 4px 0;color:#666;"><?php _e('商品'); ?></td><td><strong><?php echo htmlspecialchars($previewData['product_key'] . ' - ' . $previewData['product_title']); ?></strong></td></tr>
+                        <tr><td style="padding:4px 16px 4px 0;color:#666;"><?php _e('批次名称'); ?></td><td><?php echo htmlspecialchars($previewData['batch_name']); ?></td></tr>
+                        <tr><td style="padding:4px 16px 4px 0;color:#666;"><?php _e('原始行数'); ?></td><td><?php echo $previewData['raw_count']; ?></td></tr>
+                        <tr><td style="padding:4px 16px 4px 0;color:#666;"><?php _e('有效条数'); ?></td><td style="color:#10b981;font-weight:600;"><?php echo $previewData['valid_count']; ?></td></tr>
+                        <tr><td style="padding:4px 16px 4px 0;color:#666;"><?php _e('文件内重复'); ?></td><td style="color:<?php echo $previewData['duplicate_in_file'] > 0 ? '#f59e0b' : '#666'; ?>;"><?php echo $previewData['duplicate_in_file']; ?></td></tr>
+                    </table>
+                    <?php if ($previewData['valid_count'] > 0): ?>
+                        <form method="post" action="<?php echo htmlspecialchars($formAction); ?>" enctype="multipart/form-data">
+                            <input type="hidden" name="action" value="import_cards">
+                            <input type="hidden" name="product_id" value="<?php echo $previewData['product_id']; ?>">
+                            <input type="hidden" name="batch_name" value="<?php echo htmlspecialchars($previewData['batch_name']); ?>">
+                            <input type="hidden" name="filename_hint" value="<?php echo htmlspecialchars($previewData['filename_hint']); ?>">
+                            <textarea name="card_lines" style="display:none;"><?php echo htmlspecialchars($previewData['raw_lines']); ?></textarea>
+                            <button class="btn primary" type="submit" onclick="return confirm('确认导入 <?php echo $previewData['valid_count']; ?> 条卡密？');"><?php _e('确认导入'); ?></button>
+                            <a href="<?php echo htmlspecialchars($panelUrl); ?>" class="btn"><?php _e('取消'); ?></a>
+                        </form>
+                    <?php else: ?>
+                        <p style="color:#666;"><?php _e('没有可导入的有效卡密。'); ?></p>
+                        <a href="<?php echo htmlspecialchars($panelUrl); ?>" class="btn"><?php _e('返回'); ?></a>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (empty($previewData)): ?>
             <form method="post" action="<?php echo htmlspecialchars($formAction); ?>" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="import_cards">
+                <input type="hidden" name="action" value="preview_cards">
                 <p>
                     <label><?php _e('选择商品'); ?></label><br>
                     <select name="product_id" required>
@@ -424,14 +530,15 @@ include 'menu.php';
                 <p>
                     <label><?php _e('上传文件'); ?></label><br>
                     <input type="file" name="card_file" accept=".txt,.csv,.tsv,text/plain,text/csv,text/tab-separated-values">
-                    <small>支持 .txt / .csv / .tsv，最大 5MB</small>
+                    <small>支持 .txt / .csv / .tsv，最大 5MB。CSV 文件使用标准引号转义解析。</small>
                 </p>
                 <p>
                     <label><?php _e('或直接粘贴卡密'); ?></label><br>
-                    <textarea name="card_lines" rows="8" style="width:100%;" placeholder="每行一张。支持：卡号----卡密、卡号|卡密、卡号,卡密、Tab 分隔或单独兑换码。"></textarea>
+                    <textarea name="card_lines" rows="8" style="width:100%;" placeholder="每行一张。支持：卡号----卡密、卡号|卡密、Tab 分隔或单独兑换码。CSV 请用逗号分隔。"></textarea>
                 </p>
-                <p><button class="btn primary" type="submit"><?php _e('导入卡密'); ?></button></p>
+                <p><button class="btn primary" type="submit"><?php _e('解析预览'); ?></button></p>
             </form>
+            <?php endif; ?>
         </div>
 
         <div class="typecho-table-wrap" style="margin-top:30px;">

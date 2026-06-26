@@ -64,7 +64,7 @@ class Plugin implements PluginInterface
     private const CARD_INVENTORY_PANEL = 'TypechoPay/manage/card-inventory.php';
     private const CARD_SALES_PANEL = 'TypechoPay/manage/card-sales.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
-    private const SCHEMA_VERSION = 7;
+    private const SCHEMA_VERSION = 8;
 
     /**
      * 启用插件。
@@ -661,6 +661,7 @@ class Plugin implements PluginInterface
                 `batch_id` BIGINT UNSIGNED DEFAULT NULL,
                 `code_ciphertext` MEDIUMTEXT NOT NULL,
                 `secret_ciphertext` MEDIUMTEXT DEFAULT NULL,
+                `code_mask` VARCHAR(64) DEFAULT NULL,
                 `fingerprint` VARCHAR(128) NOT NULL,
                 `status` VARCHAR(32) NOT NULL DEFAULT 'available',
                 `reserved_order_id` BIGINT UNSIGNED DEFAULT NULL,
@@ -836,6 +837,7 @@ class Plugin implements PluginInterface
                 batch_id INTEGER DEFAULT NULL,
                 code_ciphertext TEXT NOT NULL,
                 secret_ciphertext TEXT DEFAULT NULL,
+                code_mask TEXT DEFAULT NULL,
                 fingerprint TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'available',
                 reserved_order_id INTEGER DEFAULT NULL,
@@ -1008,6 +1010,7 @@ class Plugin implements PluginInterface
                 batch_id BIGINT DEFAULT NULL,
                 code_ciphertext TEXT NOT NULL,
                 secret_ciphertext TEXT DEFAULT NULL,
+                code_mask VARCHAR(64) DEFAULT NULL,
                 fingerprint VARCHAR(128) NOT NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'available',
                 reserved_order_id BIGINT DEFAULT NULL,
@@ -1139,6 +1142,10 @@ class Plugin implements PluginInterface
             self::trySchema($db, "CREATE INDEX {$productDeliveryIdx} ON {$cardItemsTable} (product_id, status, delivered_at)");
             self::trySchema($db, "CREATE INDEX {$batchStatusIdx} ON {$cardItemsTable} (batch_id, status)");
         }
+
+        // v8: Add code_mask column for admin display.
+        $codeMaskType = $isMysql ? 'VARCHAR(64)' : ($isPgsql ? 'VARCHAR(64)' : 'TEXT');
+        self::trySchema($db, "ALTER TABLE {$cardItemsTable} ADD COLUMN code_mask {$codeMaskType} DEFAULT NULL");
     }
 
     private static function schemaVersion(Db $db): int

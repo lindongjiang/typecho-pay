@@ -16,12 +16,20 @@ $panelUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard
 $filterProductId = filter_var($request->get('product_id'), FILTER_VALIDATE_INT);
 $filterProductId = $filterProductId !== false ? (int) $filterProductId : 0;
 $page = max(1, filter_var($request->get('p'), FILTER_VALIDATE_INT) ?: 1);
+$tab = (string) $request->get('tab');
+if (!in_array($tab, ['delivered', 'abnormal'], true)) {
+    $tab = 'delivered';
+}
 
 // Load products for filter.
 $products = $db->fetchAll($db->select()->from('table.pay_products')->order('product_key', Db::SORT_ASC));
 
-// Get sales data.
-$result = $cardService->sales($filterProductId, $page);
+// Get data based on active tab.
+if ($tab === 'abnormal') {
+    $result = $cardService->abnormalOrders($filterProductId, $page);
+} else {
+    $result = $cardService->sales($filterProductId, $page);
+}
 $rows = $result['rows'];
 $total = $result['total'];
 $perPage = $result['per_page'];
@@ -40,9 +48,22 @@ include 'menu.php';
             &nbsp; <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-inventory.php'); ?>">卡密库存</a></p>
         </div>
 
+        <!-- Tabs -->
+        <div style="margin:16px 0 0;border-bottom:2px solid #ddd;">
+            <a href="<?php echo htmlspecialchars($panelUrl . '&product_id=' . $filterProductId . '&tab=delivered'); ?>"
+               style="display:inline-block;padding:8px 20px;text-decoration:none;border-bottom:2px solid <?php echo $tab === 'delivered' ? '#3b82f6' : 'transparent'; ?>;margin-bottom:-2px;color:<?php echo $tab === 'delivered' ? '#3b82f6' : '#666'; ?>;font-weight:<?php echo $tab === 'delivered' ? '600' : '400'; ?>;">
+                <?php _e('已交付卡密'); ?>
+            </a>
+            <a href="<?php echo htmlspecialchars($panelUrl . '&product_id=' . $filterProductId . '&tab=abnormal'); ?>"
+               style="display:inline-block;padding:8px 20px;text-decoration:none;border-bottom:2px solid <?php echo $tab === 'abnormal' ? '#ef4444' : 'transparent'; ?>;margin-bottom:-2px;color:<?php echo $tab === 'abnormal' ? '#ef4444' : '#666'; ?>;font-weight:<?php echo $tab === 'abnormal' ? '600' : '400'; ?>;">
+                <?php _e('异常订单'); ?>
+            </a>
+        </div>
+
         <!-- Filters -->
         <form method="get" action="<?php echo htmlspecialchars($options->adminUrl . 'extending.php'); ?>" style="margin:16px 0;padding:12px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;">
             <input type="hidden" name="panel" value="TypechoPay/manage/card-sales.php">
+            <input type="hidden" name="tab" value="<?php echo htmlspecialchars($tab); ?>">
             <label>商品：
                 <select name="product_id">
                     <option value="0"><?php _e('全部商品'); ?></option>
@@ -57,6 +78,7 @@ include 'menu.php';
             <button class="btn btn-s" type="submit"><?php _e('筛选'); ?></button>
         </form>
 
+        <?php if ($tab === 'delivered'): ?>
         <p style="color:#666;"><?php _e('共 '); echo $total; _e(' 笔已售出'); ?></p>
 
         <div class="typecho-table-wrap">
@@ -151,7 +173,7 @@ include 'menu.php';
                         </td>
                         <td>
                             <?php if (!empty($row['delivered_order_id'])): ?>
-                                <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Forders.php&search=' . rawurlencode((string) $row['out_trade_no'])); ?>">查看订单</a>
+                                <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Forders.php&out_trade_no=' . rawurlencode((string) $row['out_trade_no'])); ?>">查看订单</a>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -160,10 +182,105 @@ include 'menu.php';
             </table>
         </div>
 
+        <?php else: ?>
+        <!-- Abnormal orders tab -->
+        <p style="color:#666;"><?php _e('共 '); echo $total; _e(' 笔异常订单（已付款但交付失败/部分/待处理）'); ?></p>
+
+        <div class="typecho-table-wrap">
+            <table class="typecho-list-table">
+                <colgroup>
+                    <col width="14%">
+                    <col width="8%">
+                    <col width="10%">
+                    <col width="8%">
+                    <col width="8%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="12%">
+                    <col width="10%">
+                </colgroup>
+                <thead>
+                <tr>
+                    <th><?php _e('订单号'); ?></th>
+                    <th><?php _e('网关'); ?></th>
+                    <th><?php _e('金额'); ?></th>
+                    <th><?php _e('买家'); ?></th>
+                    <th><?php _e('支付状态'); ?></th>
+                    <th><?php _e('交付状态'); ?></th>
+                    <th><?php _e('支付时间'); ?></th>
+                    <th><?php _e('创建时间'); ?></th>
+                    <th><?php _e('交付详情'); ?></th>
+                    <th><?php _e('操作'); ?></th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php if (!$rows): ?>
+                    <tr><td colspan="10"><h6 class="typecho-list-table-title"><?php _e('暂无异常订单'); ?></h6></td></tr>
+                <?php endif; ?>
+                <?php foreach ($rows as $item): ?>
+                    <?php $order = $item['order']; $fulfillments = $item['fulfillments']; ?>
+                    <tr>
+                        <td><code><?php echo htmlspecialchars((string) $order['out_trade_no']); ?></code></td>
+                        <td><?php echo htmlspecialchars((string) $order['gateway']); ?></td>
+                        <td><?php echo htmlspecialchars(Money::formatForDisplay((int) $order['amount'], (string) ($order['currency'] ?? 'CNY'))); ?></td>
+                        <td>
+                            <?php
+                            if (!empty($order['user_id'])) {
+                                echo 'UID:' . (int) $order['user_id'];
+                            } elseif (!empty($order['guest_token_hash'])) {
+                                echo '访客:' . substr((string) $order['guest_token_hash'], 0, 8) . '...';
+                            } else {
+                                echo '-';
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php
+                            $ps = (string) ($order['payment_status'] ?? '');
+                            $psColors = ['paid' => '#10b981', 'pending' => '#f59e0b', 'failed' => '#ef4444', 'processing' => '#3b82f6'];
+                            ?>
+                            <span style="color:<?php echo $psColors[$ps] ?? '#666'; ?>;font-weight:600;"><?php echo htmlspecialchars($ps); ?></span>
+                        </td>
+                        <td>
+                            <?php
+                            $fs = (string) ($order['fulfillment_status'] ?? '');
+                            $fsColors = ['fulfilled' => '#10b981', 'failed' => '#ef4444', 'pending' => '#f59e0b', 'partial' => '#f59e0b', 'processing' => '#3b82f6'];
+                            ?>
+                            <span style="color:<?php echo $fsColors[$fs] ?? '#666'; ?>;font-weight:600;"><?php echo htmlspecialchars($fs); ?></span>
+                        </td>
+                        <td><small><?php echo !empty($order['paid_at']) ? htmlspecialchars((string) $order['paid_at']) : '-'; ?></small></td>
+                        <td><small><?php echo htmlspecialchars((string) ($order['created_at'] ?? '')); ?></small></td>
+                        <td>
+                            <?php if ($fulfillments): ?>
+                                <?php foreach ($fulfillments as $f): ?>
+                                    <small>
+                                        <?php echo htmlspecialchars((string) ($f['handler'] ?? '')); ?>:
+                                        <span style="color:<?php echo ($f['status'] ?? '') === 'failed' ? '#ef4444' : '#666'; ?>;"><?php echo htmlspecialchars((string) ($f['status'] ?? '')); ?></span>
+                                        <?php if (!empty($f['last_error'])): ?>
+                                            <br><?php $shortErr = function_exists('mb_substr') ? mb_substr((string) $f['last_error'], 0, 50) : substr((string) $f['last_error'], 0, 50); ?>
+                                            <span style="color:#ef4444;" title="<?php echo htmlspecialchars((string) $f['last_error']); ?>"><?php echo htmlspecialchars($shortErr); ?></span>
+                                        <?php endif; ?>
+                                    </small><br>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <small style="color:#999;"><?php _e('无交付记录'); ?></small>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Forders.php&out_trade_no=' . rawurlencode((string) $order['out_trade_no'])); ?>">查看订单</a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+
         <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
         <div style="margin-top:16px;">
-            <?php $baseParams = 'panel=TypechoPay/manage/card-sales.php&product_id=' . $filterProductId; ?>
+            <?php $baseParams = 'panel=TypechoPay/manage/card-sales.php&product_id=' . $filterProductId . '&tab=' . $tab; ?>
             <?php if ($page > 1): ?>
                 <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?' . $baseParams . '&p=' . ($page - 1)); ?>">&laquo; <?php _e('上一页'); ?></a>
             <?php endif; ?>
