@@ -11,6 +11,7 @@ namespace {
 
     require_once dirname(__DIR__) . '/src/Contracts/NotifyResult.php';
     require_once dirname(__DIR__) . '/src/Contracts/PayCreateResult.php';
+    require_once dirname(__DIR__) . '/src/Contracts/GatewayInterface.php';
     require_once dirname(__DIR__) . '/src/Support/HttpHeaders.php';
     require_once dirname(__DIR__) . '/src/Gateways/AbstractGateway.php';
     require_once dirname(__DIR__) . '/src/Gateways/PayPayGateway.php';
