@@ -52,7 +52,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.3.1
+ * @version 0.3.2
  * @link https://github.com/
  */
 class Plugin implements PluginInterface

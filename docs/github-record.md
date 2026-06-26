@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-26 Admin Panels and Card Management (v0.3.2)
+
+### Change
+
+Added card-inventory and card-sales admin pages, product editing, file upload import, and fixed purchase policy / reservation release logic.
+
+### Scope
+
+- New `manage/card-inventory.php`: paginated card inventory with product/status/batch filters, void and compromised batch actions.
+- New `manage/card-sales.php`: delivered cards with order/payment/fulfillment details, retry count, last error.
+- Product editing in `manage/products.php`: title, price, status, purchase policy, max_per_user, deliverables.
+- File upload (.txt/.csv/.tsv, max 5MB) for card import alongside textarea.
+- Import statistics: raw_count, duplicate_in_file, imported, db_duplicates.
+- Fixed `PurchasePolicyService::countPaidOrders` to use `COUNT(*)` for `limited` policy.
+- Fixed `releaseExpiredReservations` to skip cards whose orders have `payment_status` paid or processing.
+- Batch fingerprint pre-check to reduce DB unique-violation errors.
+- Schema v7: new indexes for delivered_order_id, (product_id, status, delivered_at), (batch_id, status).
+
+### Boundary
+
+Does not yet include: bulk card reissue, refund-based card void, low-stock email alerts, or database integration tests.
+
 ## 2026-06-26 Payment Lifecycle P0 Follow-Up
 
 ### Change
