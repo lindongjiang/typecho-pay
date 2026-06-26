@@ -64,7 +64,7 @@ class Plugin implements PluginInterface
     private const CARD_INVENTORY_PANEL = 'TypechoPay/manage/card-inventory.php';
     private const CARD_SALES_PANEL = 'TypechoPay/manage/card-sales.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
-    private const SCHEMA_VERSION = 8;
+    private const SCHEMA_VERSION = 9;
 
     /**
      * 启用插件。
@@ -223,6 +223,18 @@ class Plugin implements PluginInterface
 
         $content = self::renderProtectedContent($content, $archive);
 
+        // Render [typechopay_shop ...] — product listing page.
+        $content = preg_replace_callback('/\[typechopay_shop(?:\s+([^\]]*))?\]/i', function ($matches) {
+            $attrs = self::parseShortcodeAttrs($matches[1] ?? '');
+            return self::renderShopShortcode($attrs);
+        }, $content);
+
+        // Render [typechopay_product ...] — single product card.
+        $content = preg_replace_callback('/\[typechopay_product\s+([^\]]+)\]/i', function ($matches) {
+            $attrs = self::parseShortcodeAttrs($matches[1]);
+            return self::renderProductCardShortcode($attrs);
+        }, $content);
+
         return preg_replace_callback('/\[typechopay\s+([^\]]+)\]/i', function ($matches) use ($archive) {
             $attrs = self::parseShortcodeAttrs($matches[1]);
             $options = Options::alloc();
@@ -305,6 +317,269 @@ class Plugin implements PluginInterface
     public static function signingSecret(Options $options, array $config): string
     {
         return $config['endpointSecret'] !== '' ? $config['endpointSecret'] : (string) $options->secret;
+    }
+
+    /**
+     * Render [typechopay_shop] — product listing with optional category filter.
+     */
+    private static function renderShopShortcode(array $attrs): string
+    {
+        self::enqueueShopCss();
+
+        $db = Db::get();
+        $categorySlug = trim((string) ($attrs['category'] ?? ''));
+        $columns = max(1, min(6, (int) ($attrs['columns'] ?? 3)));
+        $limit = max(1, min(100, (int) ($attrs['limit'] ?? 20)));
+        $featured = (string) ($attrs['featured'] ?? '') === '1';
+
+        $select = $db->select()->from('table.pay_products')
+            ->where('status = ?', 'active')
+            ->order('sort_order', Db::SORT_ASC)
+            ->order('id', Db::SORT_DESC)
+            ->limit($limit);
+
+        if ($categorySlug !== '') {
+            $cat = $db->fetchRow(
+                $db->select('id')->from('table.pay_product_categories')
+                    ->where('slug = ?', $categorySlug)
+                    ->where('status = ?', 'active')
+                    ->limit(1)
+            );
+            if ($cat) {
+                $select->where('category_id = ?', (int) $cat['id']);
+            } else {
+                return '<div class="typechopay-shop"><p class="typechopay-shop__empty">' . htmlspecialchars(_t('分类不存在')) . '</p></div>';
+            }
+        }
+
+        if ($featured) {
+            $select->where('is_featured = ?', 1);
+        }
+
+        $products = $db->fetchAll($select);
+        if (!$products) {
+            return '<div class="typechopay-shop"><p class="typechopay-shop__empty">' . htmlspecialchars(_t('暂无商品')) . '</p></div>';
+        }
+
+        // Load categories for display.
+        $categories = [];
+        $allCats = $db->fetchAll($db->select()->from('table.pay_product_categories')->where('status = ?', 'active'));
+        foreach ($allCats as $c) {
+            $categories[(int) $c['id']] = $c;
+        }
+
+        // Try theme template first.
+        $templateData = compact('products', 'categories', 'columns', 'categorySlug', 'attrs');
+        $themed = self::renderThemeTemplate('shop', $templateData);
+        if ($themed !== null) {
+            return $themed;
+        }
+
+        // Default template.
+        $html = '<div class="typechopay-shop">';
+        $html .= '<div class="typechopay-shop__grid" style="display:grid;grid-template-columns:repeat(' . $columns . ',1fr);gap:20px;">';
+
+        $options = Options::alloc();
+        $config = self::pluginConfig($options);
+
+        foreach ($products as $product) {
+            $html .= self::renderProductCardHtml($product, $categories, $options, $config);
+        }
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    /**
+     * Render [typechopay_product product="key"] — single product card.
+     */
+    private static function renderProductCardShortcode(array $attrs): string
+    {
+        self::enqueueShopCss();
+
+        $productKey = trim((string) ($attrs['product'] ?? ''));
+        if ($productKey === '') {
+            return '<p class="typechopay-error">' . htmlspecialchars(_t('缺少 product 参数')) . '</p>';
+        }
+
+        $db = Db::get();
+        $product = $db->fetchRow(
+            $db->select()->from('table.pay_products')
+                ->where('product_key = ?', $productKey)
+                ->where('status = ?', 'active')
+                ->limit(1)
+        );
+        if (!$product) {
+            return '<p class="typechopay-error">' . htmlspecialchars(_t('商品不存在或已下架')) . '</p>';
+        }
+
+        $categories = [];
+        $allCats = $db->fetchAll($db->select()->from('table.pay_product_categories')->where('status = ?', 'active'));
+        foreach ($allCats as $c) {
+            $categories[(int) $c['id']] = $c;
+        }
+
+        // Try theme template first.
+        $templateData = ['product' => $product, 'categories' => $categories, 'attrs' => $attrs];
+        $themed = self::renderThemeTemplate('product-card', $templateData);
+        if ($themed !== null) {
+            return $themed;
+        }
+
+        $options = Options::alloc();
+        $config = self::pluginConfig($options);
+        return '<div class="typechopay-shop">'
+            . self::renderProductCardHtml($product, $categories, $options, $config)
+            . '</div>';
+    }
+
+    /**
+     * Render a single product card HTML.
+     */
+    private static function renderProductCardHtml(array $product, array $categories, Options $options, array $config): string
+    {
+        $pid = (int) $product['id'];
+        $currency = (string) ($product['currency'] ?? 'CNY');
+        $amount = (int) $product['amount'];
+        $catName = '';
+        if (!empty($product['category_id']) && isset($categories[(int) $product['category_id']])) {
+            $catName = (string) $categories[(int) $product['category_id']]['name'];
+        }
+
+        // Stock info for cardcode products.
+        $stockHtml = '';
+        $stockPolicy = (string) ($product['stock_policy'] ?? 'none');
+        if ($stockPolicy === 'reserve_on_order') {
+            try {
+                $cardService = new Services\CardCodeService(Db::get());
+                $counts = $cardService->stockCounts($pid);
+                $displayMode = (string) ($product['stock_display_mode'] ?? 'exact');
+                if ($displayMode === 'range') {
+                    $avail = $counts['available'];
+                    if ($avail >= 100) $stockText = '充足';
+                    elseif ($avail >= 10) $stockText = ($avail - $avail % 10) . '+';
+                    elseif ($avail > 0) $stockText = '少量';
+                    else $stockText = '售罄';
+                } elseif ($displayMode === 'hidden') {
+                    $stockText = '';
+                } else {
+                    $stockText = _t('库存 %d', $counts['available']);
+                }
+                if ($stockText !== '') {
+                    $stockHtml = '<div class="typechopay-card__stock">' . htmlspecialchars($stockText) . '</div>';
+                }
+            } catch (\Throwable $e) {
+                // Silently skip stock display on error.
+            }
+        }
+
+        $summary = (string) ($product['summary'] ?? '');
+        $coverUrl = (string) ($product['cover_url'] ?? '');
+        $coverHtml = '';
+        if ($coverUrl !== '') {
+            $coverHtml = '<div class="typechopay-card__cover"><img src="' . htmlspecialchars($coverUrl) . '" alt="' . htmlspecialchars($product['title']) . '"></div>';
+        }
+
+        $catHtml = '';
+        if ($catName !== '') {
+            $catHtml = '<span class="typechopay-card__category">' . htmlspecialchars($catName) . '</span>';
+        }
+
+        $summaryHtml = '';
+        if ($summary !== '') {
+            $summaryHtml = '<p class="typechopay-card__summary">' . htmlspecialchars($summary) . '</p>';
+        }
+
+        // Build pay form (reuse existing pay button logic).
+        $gateways = self::normalizeGateways(implode(',', $config['enabledGateways']));
+        $gateways = array_values(array_filter($gateways, function ($gw) use ($currency) {
+            return self::gatewaySupportsCurrency($gw, $currency);
+        }));
+        $action = Common::url('/action/' . self::ACTION . '?do=prepare', $options->index);
+        $labels = ['paypay' => 'PayPay', 'wechat' => '微信支付', 'alipay' => '支付宝'];
+
+        $buttons = [];
+        foreach ($gateways as $gateway) {
+            $payload = [
+                'product' => (string) $product['product_key'],
+                'currency' => $currency,
+                'biz_type' => 'product',
+                'biz_id' => $pid,
+                'gateway' => $gateway,
+                'return_to' => (string) $options->index,
+            ];
+            $payload['entry_signature'] = Support\Signer::sign($payload, self::signingSecret($options, $config));
+
+            $fields = '';
+            foreach ($payload as $key => $value) {
+                $fields .= '<input type="hidden" name="' . htmlspecialchars($key) . '" value="' . htmlspecialchars((string) $value) . '">';
+            }
+            $buttons[] = '<form method="post" action="' . htmlspecialchars($action) . '" class="typechopay-form">' . $fields
+                . '<button type="submit" class="typechopay-card__buy">' . htmlspecialchars($labels[$gateway] ?? $gateway) . '</button></form>';
+        }
+
+        $buttonsHtml = $buttons ? '<div class="typechopay-card__actions">' . implode('', $buttons) . '</div>' : '';
+
+        return '<article class="typechopay-card" data-product-id="' . $pid . '">'
+            . $coverHtml
+            . '<div class="typechopay-card__body">'
+            . $catHtml
+            . '<h3 class="typechopay-card__title">' . htmlspecialchars($product['title']) . '</h3>'
+            . '<div class="typechopay-card__price">' . htmlspecialchars(Support\Money::formatForDisplay($amount, $currency)) . '</div>'
+            . $stockHtml
+            . $summaryHtml
+            . $buttonsHtml
+            . '</div>'
+            . '</article>';
+    }
+
+    /**
+     * Try to render a theme template. Returns null if no theme template found.
+     */
+    private static function renderThemeTemplate(string $name, array $data): ?string
+    {
+        $options = Options::alloc();
+        $themeDir = __TYPECHO_ROOT_DIR__ . '/usr/themes/' . $options->theme . '/typechopay';
+        $templateFile = $themeDir . '/' . $name . '.php';
+
+        if (is_file($templateFile)) {
+            extract($data, EXTR_SKIP);
+            ob_start();
+            try {
+                include $templateFile;
+            } catch (\Throwable $e) {
+                ob_end_clean();
+                error_log('[TypechoPay] Theme template error (' . $name . '): ' . $e->getMessage());
+                return null;
+            }
+            return ob_get_clean();
+        }
+
+        return null;
+    }
+
+    /**
+     * Enqueue the default shop CSS if not already loaded.
+     */
+    private static function enqueueShopCss(): void
+    {
+        static $loaded = false;
+        if ($loaded) {
+            return;
+        }
+        $loaded = true;
+
+        $options = Options::alloc();
+        $pluginUrl = Common::url('usr/plugins/TypechoPay/', $options->siteUrl);
+        $cssUrl = $pluginUrl . 'assets/typechopay.css';
+
+        // Check if theme provides its own override CSS.
+        $themeDir = __TYPECHO_ROOT_DIR__ . '/usr/themes/' . $options->theme . '/typechopay';
+        if (is_file($themeDir . '/style.css')) {
+            $cssUrl = Common::url('usr/themes/' . $options->theme . '/typechopay/style.css', $options->siteUrl);
+        }
+
+        echo '<link rel="stylesheet" href="' . htmlspecialchars($cssUrl) . '">' . "\n";
     }
 
     private static function renderPayBox(array $display, array $entryPayload, array $gateways, Options $options, array $config): string
@@ -512,6 +787,7 @@ class Plugin implements PluginInterface
         $orders = '`' . $prefix . 'pay_orders`';
         $events = '`' . $prefix . 'pay_events`';
         $entitlements = '`' . $prefix . 'pay_entitlements`';
+        $categories = '`' . $prefix . 'pay_product_categories`';
         $products = '`' . $prefix . 'pay_products`';
         $deliverables = '`' . $prefix . 'pay_product_deliverables`';
         $fulfillments = '`' . $prefix . 'pay_fulfillments`';
@@ -520,6 +796,19 @@ class Plugin implements PluginInterface
         $nonces = '`' . $prefix . 'pay_nonces`';
 
         return [
+            "CREATE TABLE IF NOT EXISTS {$categories} (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `slug` VARCHAR(128) NOT NULL,
+                `name` VARCHAR(255) NOT NULL,
+                `description` TEXT DEFAULT NULL,
+                `sort_order` INT NOT NULL DEFAULT 0,
+                `status` VARCHAR(32) NOT NULL DEFAULT 'active',
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_slug` (`slug`),
+                KEY `idx_status` (`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS {$orders} (
                 `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `out_trade_no` VARCHAR(64) NOT NULL,
@@ -606,12 +895,22 @@ class Plugin implements PluginInterface
                 `duration_seconds` BIGINT DEFAULT NULL,
                 `version` INT NOT NULL DEFAULT 1,
                 `stock_policy` VARCHAR(32) NOT NULL DEFAULT 'none',
+                `category_id` BIGINT UNSIGNED DEFAULT NULL,
+                `cover_url` VARCHAR(512) DEFAULT NULL,
+                `summary` VARCHAR(512) DEFAULT NULL,
+                `description` TEXT DEFAULT NULL,
+                `sort_order` INT NOT NULL DEFAULT 0,
+                `is_featured` TINYINT(1) NOT NULL DEFAULT 0,
+                `sales_count` INT NOT NULL DEFAULT 0,
+                `stock_display_mode` VARCHAR(32) NOT NULL DEFAULT 'exact',
                 `created_at` DATETIME NOT NULL,
                 `updated_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_product_key` (`product_key`),
                 KEY `idx_content` (`content_id`),
-                KEY `idx_status` (`status`)
+                KEY `idx_status` (`status`),
+                KEY `idx_category` (`category_id`),
+                KEY `idx_featured` (`is_featured`, `sort_order`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS {$deliverables} (
                 `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -697,6 +996,7 @@ class Plugin implements PluginInterface
         $orders = '"' . $prefix . 'pay_orders"';
         $events = '"' . $prefix . 'pay_events"';
         $entitlements = '"' . $prefix . 'pay_entitlements"';
+        $categories = '"' . $prefix . 'pay_product_categories"';
         $products = '"' . $prefix . 'pay_products"';
         $deliverables = '"' . $prefix . 'pay_product_deliverables"';
         $fulfillments = '"' . $prefix . 'pay_fulfillments"';
@@ -705,6 +1005,17 @@ class Plugin implements PluginInterface
         $nonces = '"' . $prefix . 'pay_nonces"';
 
         return [
+            "CREATE TABLE IF NOT EXISTS {$categories} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_product_categories_idx_status\" ON {$categories} (status)",
             "CREATE TABLE IF NOT EXISTS {$orders} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 out_trade_no TEXT NOT NULL UNIQUE,
@@ -787,11 +1098,21 @@ class Plugin implements PluginInterface
                 duration_seconds INTEGER DEFAULT NULL,
                 version INTEGER NOT NULL DEFAULT 1,
                 stock_policy TEXT NOT NULL DEFAULT 'none',
+                category_id INTEGER DEFAULT NULL,
+                cover_url TEXT DEFAULT NULL,
+                summary TEXT DEFAULT NULL,
+                description TEXT DEFAULT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_featured INTEGER NOT NULL DEFAULT 0,
+                sales_count INTEGER NOT NULL DEFAULT 0,
+                stock_display_mode TEXT NOT NULL DEFAULT 'exact',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_content\" ON {$products} (content_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_status\" ON {$products} (status)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_category\" ON {$products} (category_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_featured\" ON {$products} (is_featured, sort_order)",
             "CREATE TABLE IF NOT EXISTS {$deliverables} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 product_id INTEGER NOT NULL,
@@ -870,6 +1191,7 @@ class Plugin implements PluginInterface
         $orders = '"' . $prefix . 'pay_orders"';
         $events = '"' . $prefix . 'pay_events"';
         $entitlements = '"' . $prefix . 'pay_entitlements"';
+        $categories = '"' . $prefix . 'pay_product_categories"';
         $products = '"' . $prefix . 'pay_products"';
         $deliverables = '"' . $prefix . 'pay_product_deliverables"';
         $fulfillments = '"' . $prefix . 'pay_fulfillments"';
@@ -878,6 +1200,17 @@ class Plugin implements PluginInterface
         $nonces = '"' . $prefix . 'pay_nonces"';
 
         return [
+            "CREATE TABLE IF NOT EXISTS {$categories} (
+                id BIGSERIAL PRIMARY KEY,
+                slug VARCHAR(128) NOT NULL UNIQUE,
+                name VARCHAR(255) NOT NULL,
+                description TEXT DEFAULT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                status VARCHAR(32) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_product_categories_idx_status\" ON {$categories} (status)",
             "CREATE TABLE IF NOT EXISTS {$orders} (
                 id BIGSERIAL PRIMARY KEY,
                 out_trade_no VARCHAR(64) NOT NULL UNIQUE,
@@ -960,11 +1293,21 @@ class Plugin implements PluginInterface
                 duration_seconds BIGINT DEFAULT NULL,
                 version INTEGER NOT NULL DEFAULT 1,
                 stock_policy VARCHAR(32) NOT NULL DEFAULT 'none',
+                category_id BIGINT DEFAULT NULL,
+                cover_url VARCHAR(512) DEFAULT NULL,
+                summary VARCHAR(512) DEFAULT NULL,
+                description TEXT DEFAULT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_featured SMALLINT NOT NULL DEFAULT 0,
+                sales_count INTEGER NOT NULL DEFAULT 0,
+                stock_display_mode VARCHAR(32) NOT NULL DEFAULT 'exact',
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL
             )",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_content\" ON {$products} (content_id)",
             "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_status\" ON {$products} (status)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_category\" ON {$products} (category_id)",
+            "CREATE INDEX IF NOT EXISTS \"{$prefix}pay_products_idx_featured\" ON {$products} (is_featured, sort_order)",
             "CREATE TABLE IF NOT EXISTS {$deliverables} (
                 id BIGSERIAL PRIMARY KEY,
                 product_id BIGINT NOT NULL,
@@ -1146,6 +1489,56 @@ class Plugin implements PluginInterface
         // v8: Add code_mask column for admin display.
         $codeMaskType = $isMysql ? 'VARCHAR(64)' : ($isPgsql ? 'VARCHAR(64)' : 'TEXT');
         self::trySchema($db, "ALTER TABLE {$cardItemsTable} ADD COLUMN code_mask {$codeMaskType} DEFAULT NULL");
+
+        // v9: Create categories table and add product display columns.
+        $categoriesTable = $isMysql ? '`' . $prefix . 'pay_product_categories`' : '"' . $prefix . 'pay_product_categories"';
+        $catStatusType = $isMysql || $isPgsql ? 'VARCHAR(32)' : 'TEXT';
+        $catDateType = $isMysql ? 'DATETIME' : ($isPgsql ? 'TIMESTAMP' : 'TEXT');
+
+        self::trySchema($db, "CREATE TABLE IF NOT EXISTS {$categoriesTable} (
+            " . ($isMysql ? "`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT" : ($isPgsql ? "id BIGSERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT")) . ",
+            " . ($isMysql ? "`slug` VARCHAR(128) NOT NULL" : ($isPgsql ? "slug VARCHAR(128) NOT NULL" : "slug TEXT NOT NULL UNIQUE")) . ",
+            " . ($isMysql ? "`name` VARCHAR(255) NOT NULL" : ($isPgsql ? "name VARCHAR(255) NOT NULL" : "name TEXT NOT NULL")) . ",
+            " . ($isMysql ? "`description` TEXT DEFAULT NULL" : ($isPgsql ? "description TEXT DEFAULT NULL" : "description TEXT DEFAULT NULL")) . ",
+            " . ($isMysql ? "`sort_order` INT NOT NULL DEFAULT 0" : ($isPgsql ? "sort_order INTEGER NOT NULL DEFAULT 0" : "sort_order INTEGER NOT NULL DEFAULT 0")) . ",
+            `status` {$catStatusType} NOT NULL DEFAULT 'active',
+            `created_at` {$catDateType} NOT NULL,
+            `updated_at` {$catDateType} NOT NULL" . ($isMysql ? ",
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_slug` (`slug`),
+            KEY `idx_status` (`status`)" : "") . "
+        )" . ($isMysql ? " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" : ""));
+
+        // Add new columns to pay_products.
+        $productsTable = $isMysql ? '`' . $prefix . 'pay_products`' : '"' . $prefix . 'pay_products"';
+        $string512 = $isMysql || $isPgsql ? 'VARCHAR(512)' : 'TEXT';
+
+        $productColumns = [
+            "category_id BIGINT DEFAULT NULL",
+            "cover_url {$string512} DEFAULT NULL",
+            "summary {$string512} DEFAULT NULL",
+            "description TEXT DEFAULT NULL",
+            "sort_order INTEGER NOT NULL DEFAULT 0",
+            "is_featured " . ($isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : ($isPgsql ? 'SMALLINT NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0')),
+            "sales_count INTEGER NOT NULL DEFAULT 0",
+            "stock_display_mode {$catStatusType} NOT NULL DEFAULT 'exact'",
+        ];
+
+        foreach ($productColumns as $column) {
+            self::trySchema($db, "ALTER TABLE {$productsTable} ADD COLUMN {$column}");
+        }
+
+        // Add indexes for category and featured queries.
+        $categoryIdx = $isMysql ? 'idx_category' : '"' . $prefix . 'pay_products_idx_category"';
+        $featuredIdx = $isMysql ? 'idx_featured' : '"' . $prefix . 'pay_products_idx_featured"';
+
+        if ($isMysql) {
+            self::trySchema($db, "ALTER TABLE {$productsTable} ADD KEY `{$categoryIdx}` (category_id)");
+            self::trySchema($db, "ALTER TABLE {$productsTable} ADD KEY `{$featuredIdx}` (is_featured, sort_order)");
+        } else {
+            self::trySchema($db, "CREATE INDEX {$categoryIdx} ON {$productsTable} (category_id)");
+            self::trySchema($db, "CREATE INDEX {$featuredIdx} ON {$productsTable} (is_featured, sort_order)");
+        }
     }
 
     private static function schemaVersion(Db $db): int
