@@ -29,6 +29,8 @@ if (is_file($vendorAutoload)) {
     require_once $vendorAutoload;
 }
 
+// Typecho's core autoloader (Common.php) handles TypechoPlugin\ classes,
+// mapping them to the plugin root directory. This fallback covers edge cases.
 spl_autoload_register(function ($class) {
     $prefix = __NAMESPACE__ . '\\';
     if (strpos($class, $prefix) !== 0) {
@@ -37,11 +39,9 @@ spl_autoload_register(function ($class) {
 
     $relative = substr($class, strlen($prefix));
     $relativePath = str_replace('\\', '/', $relative) . '.php';
-    foreach ([__DIR__ . '/' . $relativePath, __DIR__ . '/src/' . $relativePath] as $path) {
-        if (is_file($path)) {
-            require_once $path;
-            return;
-        }
+    $path = __DIR__ . '/' . $relativePath;
+    if (is_file($path)) {
+        require_once $path;
     }
 });
 

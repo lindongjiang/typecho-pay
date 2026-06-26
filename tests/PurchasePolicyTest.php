@@ -24,7 +24,7 @@ function tp_assert(bool $condition, string $label): void
 }
 
 // ---- Test 1: PurchasePolicyService exists ----
-$ppsPath = $root . '/src/Services/PurchasePolicyService.php';
+$ppsPath = $root . '/Services/PurchasePolicyService.php';
 tp_assert(file_exists($ppsPath), 'PurchasePolicyService.php exists');
 $ppsSource = file_get_contents($ppsPath);
 
@@ -61,7 +61,7 @@ tp_assert(strpos($pluginSource, 'currentVisitorHasPurchased') !== false, 'Plugin
 tp_assert(strpos($pluginSource, 'PurchasePolicyService') !== false, 'Plugin uses PurchasePolicyService');
 
 // ---- Test 6: ProductService validates deliverables ----
-$productServiceSource = file_get_contents($root . '/src/Services/ProductService.php');
+$productServiceSource = file_get_contents($root . '/Services/ProductService.php');
 tp_assert(
     strpos($productServiceSource, 'Product has no enabled deliverables') !== false,
     'Rejects stored products without deliverables'
@@ -72,7 +72,7 @@ tp_assert(
 );
 
 // ---- Test 7: CardCodeService import is transactional ----
-$cardServiceSource = file_get_contents($root . '/src/Services/CardCodeService.php');
+$cardServiceSource = file_get_contents($root . '/Services/CardCodeService.php');
 tp_assert(strpos($cardServiceSource, 'START TRANSACTION') !== false, 'Import uses START TRANSACTION');
 tp_assert(strpos($cardServiceSource, 'COMMIT') !== false, 'Import uses COMMIT');
 tp_assert(strpos($cardServiceSource, 'ROLLBACK') !== false, 'Import uses ROLLBACK');

@@ -2,7 +2,7 @@
 
 define('__TYPECHO_ROOT_DIR__', dirname(__DIR__, 4));
 
-require_once dirname(__DIR__) . '/src/Support/CardCodeCipher.php';
+require_once dirname(__DIR__) . '/Support/CardCodeCipher.php';
 
 use TypechoPlugin\TypechoPay\Support\CardCodeCipher;
 

@@ -2,7 +2,7 @@
 
 define('__TYPECHO_ROOT_DIR__', dirname(__DIR__, 4));
 
-require_once dirname(__DIR__) . '/src/Support/Signer.php';
+require_once dirname(__DIR__) . '/Support/Signer.php';
 
 use TypechoPlugin\TypechoPay\Support\Signer;
 

@@ -13,7 +13,7 @@
 define('__TYPECHO_ROOT_DIR__', dirname(__DIR__, 4));
 
 $root = dirname(__DIR__);
-require_once $root . '/src/Support/Signer.php';
+require_once $root . '/Support/Signer.php';
 
 use TypechoPlugin\TypechoPay\Support\Signer;
 
@@ -65,7 +65,7 @@ tt_assert(preg_match('/^[a-f0-9]{64}$/', str_repeat('a', 63)) === 0, 'Short retu
 tt_assert(preg_match('/^[a-f0-9]{64}$/', str_repeat('a', 65)) === 0, 'Long return_token fails regex');
 
 // ---- Test 7: Verify PayPayGateway uses return_token not poll_token ----
-$paypaySource = file_get_contents($root . '/src/Gateways/PayPayGateway.php');
+$paypaySource = file_get_contents($root . '/Gateways/PayPayGateway.php');
 tt_assert(strpos($paypaySource, 'return_token') !== false, 'PayPayGateway references return_token');
 
 $createMethod = '';
@@ -76,7 +76,7 @@ tt_assert(strpos($createMethod, 'poll_token') === false, 'PayPayGateway::create(
 tt_assert(strpos($createMethod, 'return_token') !== false, 'PayPayGateway::create() uses return_token');
 
 // ---- Test 8: Verify AlipayGateway uses return_token not poll_token ----
-$alipaySource = file_get_contents($root . '/src/Gateways/AlipayGateway.php');
+$alipaySource = file_get_contents($root . '/Gateways/AlipayGateway.php');
 tt_assert(strpos($alipaySource, 'return_token') !== false, 'AlipayGateway references return_token');
 
 $createMethod = '';
@@ -87,7 +87,7 @@ tt_assert(strpos($createMethod, 'poll_token') === false, 'AlipayGateway::create(
 tt_assert(strpos($createMethod, 'return_token') !== false, 'AlipayGateway::create() uses return_token');
 
 // ---- Test 9: Verify OrderService has all three token methods ----
-$orderServiceSource = file_get_contents($root . '/src/Services/OrderService.php');
+$orderServiceSource = file_get_contents($root . '/Services/OrderService.php');
 tt_assert(strpos($orderServiceSource, 'function verifyPollToken') !== false, 'OrderService has verifyPollToken');
 tt_assert(strpos($orderServiceSource, 'function verifyReturnToken') !== false, 'OrderService has verifyReturnToken');
 tt_assert(strpos($orderServiceSource, 'function consumeReturnToken') !== false, 'OrderService has atomic consumeReturnToken');

@@ -26,7 +26,7 @@ function tc_assert(bool $condition, string $label): void
 }
 
 // ---- Test 1: CardCodeService has re-check logic in reserveForOrder ----
-$cardServiceSource = file_get_contents($root . '/src/Services/CardCodeService.php');
+$cardServiceSource = file_get_contents($root . '/Services/CardCodeService.php');
 
 tc_assert(
     preg_match('/for\s*\(\s*\$attempt.*?\)/s', $cardServiceSource) === 1,
@@ -49,7 +49,7 @@ if ($loopStart !== false) {
 }
 
 // ---- Test 2: OrderService has findActiveOrderForBuyer ----
-$orderServiceSource = file_get_contents($root . '/src/Services/OrderService.php');
+$orderServiceSource = file_get_contents($root . '/Services/OrderService.php');
 tc_assert(
     strpos($orderServiceSource, 'function findActiveOrderForBuyer') !== false,
     'OrderService has findActiveOrderForBuyer'

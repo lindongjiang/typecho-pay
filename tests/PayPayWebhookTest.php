@@ -9,12 +9,12 @@ namespace Widget {
 namespace {
     define('__TYPECHO_ROOT_DIR__', dirname(__DIR__, 4));
 
-    require_once dirname(__DIR__) . '/src/Contracts/NotifyResult.php';
-    require_once dirname(__DIR__) . '/src/Contracts/PayCreateResult.php';
-    require_once dirname(__DIR__) . '/src/Contracts/GatewayInterface.php';
-    require_once dirname(__DIR__) . '/src/Support/HttpHeaders.php';
-    require_once dirname(__DIR__) . '/src/Gateways/AbstractGateway.php';
-    require_once dirname(__DIR__) . '/src/Gateways/PayPayGateway.php';
+    require_once dirname(__DIR__) . '/Contracts/NotifyResult.php';
+    require_once dirname(__DIR__) . '/Contracts/PayCreateResult.php';
+    require_once dirname(__DIR__) . '/Contracts/GatewayInterface.php';
+    require_once dirname(__DIR__) . '/Support/HttpHeaders.php';
+    require_once dirname(__DIR__) . '/Gateways/AbstractGateway.php';
+    require_once dirname(__DIR__) . '/Gateways/PayPayGateway.php';
 
     use TypechoPlugin\TypechoPay\Gateways\PayPayGateway;
 
