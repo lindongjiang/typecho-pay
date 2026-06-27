@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-27 Article Card Import Submit Fix (v0.4.10)
+
+### Change
+
+Fixed the article editor card import submit path after the explicit button failed in the browser.
+
+### Scope
+
+- Changed the card import button from default submit to a controlled button.
+- On click, the script now finds the Typecho write form directly, sets the hidden `do` field to `save`, marks the form as `submitting`, disables the button, and calls the native form submit method.
+- This avoids relying on Typecho's delegated `button[name=do]` listener and prevents the beforeunload handler from blocking the navigation.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-27 Article Card Import Submit (v0.4.9)
 
 ### Change

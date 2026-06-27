@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.10 - 2026-06-27
+
+### Article editor
+
+- Fixed the article card import submit button so it no longer depends on Typecho's delegated `button[name=do]` handler.
+- The import button now explicitly locates the write form, sets `do=save`, marks the form as submitting to avoid beforeunload prompts, and submits the native form.
+
 ## 0.4.9 - 2026-06-27
 
 ### Article editor

@@ -58,7 +58,9 @@ ap_assert(strpos($pluginSource, 'data-typechopay-card-tab="list"') !== false, 'E
 ap_assert(strpos($pluginSource, 'data-typechopay-card-tab="import"') !== false, 'Editor has card import tab');
 ap_assert(strpos($pluginSource, 'id="typechopay-card-import-submit"') !== false, 'Editor import tab has explicit submit button');
 ap_assert(strpos($pluginSource, '确认提交') !== false, 'Editor import submit button has clear label');
-ap_assert(strpos($pluginSource, 'name="do" value="save"') !== false, 'Editor import submit saves the article without forcing publish');
+ap_assert(strpos($pluginSource, 'actionInput.value = \'save\'') !== false, 'Editor import submit saves the article without forcing publish');
+ap_assert(strpos($pluginSource, 'HTMLFormElement.prototype.submit.call(form)') !== false, 'Editor import submit bypasses blocked delegated submit handlers');
+ap_assert(strpos($pluginSource, 'form.classList.add(\'submitting\')') !== false, 'Editor import submit avoids beforeunload prompts');
 ap_assert(strpos($pluginSource, '请先粘贴卡密后再提交') !== false, 'Editor import submit guards empty card input');
 ap_assert(strpos($pluginSource, 'min="0.01"') !== false, 'Editor amount input accepts 0.01 yuan minimum');
 ap_assert(strpos($pluginSource, 'assertCnyYuanAmount') !== false, 'Editor saves yuan input as CNY fen');

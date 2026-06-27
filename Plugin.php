@@ -54,7 +54,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.9
+ * @version 0.4.10
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -409,7 +409,7 @@ class Plugin implements PluginInterface
                         </p>
                         <textarea name="typechopay_card_lines" placeholder="<?php _e('支持：卡号----卡密、卡号|卡密、Tab 分隔或单独兑换码。'); ?>"></textarea>
                         <p class="typechopay-card-submit-row">
-                            <button type="submit" name="do" value="save" class="btn primary" id="typechopay-card-import-submit"><?php _e('确认提交'); ?></button>
+                            <button type="button" class="btn primary" id="typechopay-card-import-submit"><?php _e('确认提交'); ?></button>
                             <small class="typechopay-editor-muted"><?php _e('提交后会保存文章并导入卡密，页面刷新后回到卡密列表。'); ?></small>
                         </p>
                     </div>
@@ -470,10 +470,31 @@ class Plugin implements PluginInterface
                     return;
                 }
                 importButton.addEventListener('click', function (event) {
+                    event.preventDefault();
                     if (lines.value.replace(/\s+/g, '') !== '') {
+                        var form = importButton.form
+                            || importButton.closest('form')
+                            || document.forms.write_post
+                            || document.forms.write_page
+                            || document.querySelector('form[name="write_post"],form[name="write_page"],form.typecho-post-area');
+                        if (!form) {
+                            window.alert('<?php echo addslashes(_t('未找到文章保存表单，请使用页面底部的保存按钮。')); ?>');
+                            return;
+                        }
+                        var actionInput = form.querySelector('input[type="hidden"][name="do"]');
+                        if (!actionInput) {
+                            actionInput = document.createElement('input');
+                            actionInput.type = 'hidden';
+                            actionInput.name = 'do';
+                            form.appendChild(actionInput);
+                        }
+                        actionInput.value = 'save';
+                        form.classList.add('submitting');
+                        importButton.disabled = true;
+                        importButton.innerHTML = '<?php echo addslashes(_t('提交中...')); ?>';
+                        HTMLFormElement.prototype.submit.call(form);
                         return;
                     }
-                    event.preventDefault();
                     lines.focus();
                     window.alert('<?php echo addslashes(_t('请先粘贴卡密后再提交。')); ?>');
                 });
