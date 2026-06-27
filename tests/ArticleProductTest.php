@@ -41,6 +41,10 @@ ap_assert(strpos($pluginSource, 'function renderArticlePayPanel') !== false, 'Pl
 ap_assert(strpos($pluginSource, 'function injectArticleProductShortcode') !== false, 'Plugin can insert product shortcode while saving article');
 ap_assert(strpos($pluginSource, 'function saveArticlePaySettings') !== false, 'Plugin saves article pay settings');
 ap_assert(strpos($pluginSource, 'function upsertArticleProduct') !== false, 'Plugin upserts product from article cid');
+ap_assert(strpos($pluginSource, 'function articleProductVisibilityStatus') !== false, 'Editor reports product visibility status');
+ap_assert(strpos($pluginSource, 'function editorContentPermalink') !== false, 'Editor can build frontend preview links');
+ap_assert(strpos($pluginSource, 'function productPanelDiagnosticComments') !== false, 'Product panel emits display diagnostics');
+ap_assert(strpos($pluginSource, 'function currentVisitorCardDeliveryUrl') !== false, 'Product panel can link to delivered card codes');
 ap_assert(strpos($pluginSource, 'function importArticleCardLines') !== false, 'Editor can import pasted card lines on save');
 ap_assert(strpos($pluginSource, 'function articleCardStats') !== false, 'Editor shows card inventory stats');
 ap_assert(strpos($pluginSource, 'function recentArticleCards') !== false, 'Editor shows recent card masks');
@@ -81,7 +85,14 @@ ap_assert(strpos($pluginSource, '绑定商品 ID') !== false, 'Editor shows boun
 ap_assert(strpos($pluginSource, '商品状态') !== false, 'Editor shows product status');
 ap_assert(strpos($pluginSource, '当前库存') !== false, 'Editor shows current stock summary');
 ap_assert(strpos($pluginSource, '自动插入') !== false, 'Editor shows auto-insert status');
-ap_assert(strpos($pluginSource, '保存付费模式时在正文插入 [typechopay_product]') !== false, 'Editor defaults toward shortcode insertion');
+ap_assert(strpos($pluginSource, '前台显示') !== false, 'Editor shows frontend visibility status');
+ap_assert(strpos($pluginSource, '保存时在正文顶部插入购买模块') !== false, 'Editor defaults toward shortcode insertion on save');
+ap_assert(strpos($pluginSource, '插入购买模块到光标') !== false, 'Editor can insert the product shortcode at cursor');
+ap_assert(strpos($pluginSource, '查看前台效果') !== false, 'Editor links to frontend preview');
+ap_assert(strpos($pluginSource, '查看我的卡密') !== false, 'Purchased card products expose delivery link');
+ap_assert(strpos($pluginSource, 'no deliverable') !== false, 'Product panel diagnostics include missing deliverable');
+ap_assert(strpos($pluginSource, 'no gateway') !== false, 'Product panel diagnostics include missing gateway');
+ap_assert(strpos($pluginSource, 'no stock') !== false, 'Product panel diagnostics include missing stock');
 
 echo "\n\n--- ArticleProductTest ---\n";
 echo "Passed: {$passed}\n";

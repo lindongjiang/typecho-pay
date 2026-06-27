@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.4.5 - 2026-06-27
+
+### Article product display
+
+- Added a cursor-position insert button for `[typechopay_product]` in the article editor while keeping the save-time top insertion option.
+- Added editor visibility status and a frontend preview link so admins can see whether the product panel will render through a shortcode, global auto-injection, or theme helper integration.
+- Product cards for already purchased card-code products now show a `查看我的卡密` link when the current visitor has a delivered card order.
+- Added admin-only product-panel diagnostics for missing deliverables, missing compatible gateways, and empty card-code stock.
+
 ## 0.4.4 - 2026-06-27
 
 ### Theme integration

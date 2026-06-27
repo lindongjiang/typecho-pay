@@ -54,7 +54,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.4
+ * @version 0.4.5
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -288,9 +288,11 @@ class Plugin implements PluginInterface
         $stockText = $cardStats
             ? _t('可用 %d / 预留 %d / 已售 %d', (int) $cardStats['available'], (int) $cardStats['reserved'], (int) $cardStats['delivered'])
             : _t('保存卡密商品后显示');
+        $visibilityStatus = self::articleProductVisibilityStatus($containsShortcode, $config['productAutoInjectPosition']);
         $productsUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fproducts.php';
         $inventoryUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-inventory.php';
         $salesUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-sales.php';
+        $previewUrl = self::editorContentPermalink($content);
         if ($product) {
             $productsUrl .= '&edit=' . (int) $product['id'];
             $inventoryUrl .= '&product_id=' . (int) $product['id'];
@@ -333,6 +335,7 @@ class Plugin implements PluginInterface
                     <span><?php _e('商品状态'); ?>: <?php echo htmlspecialchars($productStatus); ?></span>
                     <span><?php _e('当前库存'); ?>: <?php echo htmlspecialchars($stockText); ?></span>
                     <span><?php _e('自动插入'); ?>: <?php echo htmlspecialchars($autoInjectLabel); ?></span>
+                    <span><?php _e('前台显示'); ?>: <?php echo htmlspecialchars($visibilityStatus); ?></span>
                     <?php if ($containsShortcode): ?><span><?php _e('正文已有购买短代码'); ?></span><?php endif; ?>
                 </div>
                 <div class="typechopay-editor-row">
@@ -369,8 +372,10 @@ class Plugin implements PluginInterface
 
                 <div class="typechopay-editor-row">
                     <label><input type="checkbox" name="typechopay_unlock_article" value="1" <?php if ($hasPostAccess || $mode === 'post_access') echo 'checked'; ?>> <?php _e('购买后解锁本文'); ?></label>
-                    <label><input type="checkbox" name="typechopay_insert_shortcode" value="1" <?php if ($shouldInsert) echo 'checked'; ?>> <?php _e('保存付费模式时在正文插入 [typechopay_product]'); ?></label>
+                    <label><input type="checkbox" name="typechopay_insert_shortcode" value="1" <?php if ($shouldInsert) echo 'checked'; ?>> <?php _e('保存时在正文顶部插入购买模块'); ?></label>
+                    <button type="button" class="btn btn-xs" id="typechopay-insert-product-shortcode"><?php _e('插入购买模块到光标'); ?></button>
                     <?php if ($containsShortcode): ?><small class="typechopay-editor-muted"><?php _e('正文已包含 TypechoPay 购买短代码，不会重复插入。'); ?></small><?php endif; ?>
+                    <small class="typechopay-editor-muted"><?php _e('类似附件“插入到正文”。不插入时，仅保存商品绑定；前台显示取决于自动插入设置或主题 helper。'); ?></small>
                 </div>
 
                 <div class="typechopay-editor-cardbox">
@@ -412,6 +417,9 @@ class Plugin implements PluginInterface
                     <div class="typechopay-editor-actions">
                         <?php if ($product): ?>
                             <a class="btn btn-xs" href="<?php echo htmlspecialchars($productsUrl); ?>"><?php _e('高级设置'); ?></a>
+                            <?php if ($previewUrl !== ''): ?>
+                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($previewUrl); ?>" target="_blank" rel="noopener noreferrer"><?php _e('查看前台效果'); ?></a>
+                            <?php endif; ?>
                             <?php if ($hasCardcode): ?>
                                 <a class="btn btn-xs" href="<?php echo htmlspecialchars($inventoryUrl); ?>"><?php _e('完整库存'); ?></a>
                                 <a class="btn btn-xs" href="<?php echo htmlspecialchars($salesUrl); ?>"><?php _e('销售记录'); ?></a>
@@ -420,6 +428,35 @@ class Plugin implements PluginInterface
                     </div>
                 </div>
             </div>
+            <script>
+            (function () {
+                var button = document.getElementById('typechopay-insert-product-shortcode');
+                if (!button) {
+                    return;
+                }
+                button.addEventListener('click', function () {
+                    var textarea = document.getElementById('text') || document.querySelector('textarea[name="text"]');
+                    if (!textarea) {
+                        return;
+                    }
+                    var shortcode = '[typechopay_product]\n\n';
+                    if (textarea.value.match(/\[(typechopay|typechopay_product|typechopay_shop)(\s|\])/i)
+                        && !window.confirm('<?php echo addslashes(_t('正文已经有购买短代码，仍然插入吗？')); ?>')) {
+                        return;
+                    }
+                    textarea.focus();
+                    if (typeof textarea.selectionStart === 'number') {
+                        var start = textarea.selectionStart;
+                        var end = textarea.selectionEnd;
+                        textarea.value = textarea.value.slice(0, start) + shortcode + textarea.value.slice(end);
+                        textarea.selectionStart = textarea.selectionEnd = start + shortcode.length;
+                    } else {
+                        textarea.value += '\n\n' + shortcode;
+                    }
+                    textarea.dispatchEvent(new Event('input', {bubbles: true}));
+                });
+            }());
+            </script>
         </section>
         <?php
     }
@@ -878,7 +915,7 @@ class Plugin implements PluginInterface
         ];
         $themed = self::renderThemeTemplate('product-panel', $templateData);
         if ($themed !== null) {
-            return $css . $themed;
+            return $css . $themed . self::productPanelDiagnosticComments($product, $stats, $state, $config);
         }
 
         $pid = (int) $product['id'];
@@ -925,7 +962,8 @@ class Plugin implements PluginInterface
             . '</div>'
             . '<div class="typechopay-product-panel__actions">' . $actions . '</div>'
             . '</div>'
-            . '</section>';
+            . '</section>'
+            . self::productPanelDiagnosticComments($product, $stats, $state, $config);
     }
 
     /**
@@ -1243,6 +1281,106 @@ class Plugin implements PluginInterface
         }));
     }
 
+    private static function articleProductVisibilityStatus(bool $containsShortcode, string $autoInjectPosition): string
+    {
+        if ($containsShortcode) {
+            return _t('会显示：正文已插入购买模块');
+        }
+
+        $labels = [
+            'top' => _t('正文顶部'),
+            'bottom' => _t('正文底部'),
+            'after_first_paragraph' => _t('第一段之后'),
+        ];
+        if (isset($labels[$autoInjectPosition])) {
+            return _t('会显示：全局自动插入%s', $labels[$autoInjectPosition]);
+        }
+
+        return _t('可能不显示：需插入短代码或主题调用 helper');
+    }
+
+    private static function editorContentPermalink($content): string
+    {
+        try {
+            $permalink = is_object($content) ? (string) ($content->permalink ?? '') : '';
+        } catch (\Throwable $e) {
+            return '';
+        }
+
+        return $permalink !== '' ? $permalink : '';
+    }
+
+    private static function productPanelDiagnosticComments(array $product, array $stats, array $state, array $config): string
+    {
+        $comments = '';
+        $productId = (int) ($product['id'] ?? ($product['product_id'] ?? 0));
+        if ($productId > 0 && !self::productDeliverableHandlers($productId)) {
+            $comments .= self::adminDiagnosticComment('no deliverable');
+        }
+
+        if (($state['status'] ?? '') === 'unavailable' || !self::availableProductGateways($product, $config)) {
+            $comments .= self::adminDiagnosticComment('no gateway');
+        }
+
+        if ((string) ($product['stock_policy'] ?? 'none') === 'reserve_on_order'
+            && $stats['available'] !== null
+            && (int) $stats['available'] <= 0) {
+            $comments .= self::adminDiagnosticComment('no stock');
+        }
+
+        return $comments;
+    }
+
+    private static function currentVisitorCardDeliveryUrl(array $product, Options $options): string
+    {
+        $productId = (int) ($product['id'] ?? ($product['product_id'] ?? 0));
+        if ($productId <= 0 || !in_array('cardcode', self::productDeliverableHandlers($productId), true)) {
+            return '';
+        }
+
+        $user = User::alloc();
+        $userId = $user->hasLogin() ? (int) $user->uid : null;
+        $guestTokenHash = GuestToken::hash(GuestToken::get());
+        if ($userId !== null && $guestTokenHash !== null) {
+            (new GuestClaimService(Db::get()))->claimAll($userId, $guestTokenHash);
+        }
+
+        if ($userId === null && ($guestTokenHash === null || $guestTokenHash === '')) {
+            return '';
+        }
+
+        $db = Db::get();
+        $select = $db->select('id', 'out_trade_no')->from('table.pay_orders')
+            ->where('product_id = ?', $productId)
+            ->where('payment_status = ?', 'paid')
+            ->order('id', Db::SORT_DESC)
+            ->limit(10);
+
+        if ($userId !== null) {
+            $select->where('user_id = ?', $userId);
+        } else {
+            $select->where('guest_token_hash = ?', $guestTokenHash)
+                ->where('user_id IS NULL');
+        }
+
+        foreach ($db->fetchAll($select) as $order) {
+            $card = $db->fetchRow(
+                $db->select('id')->from('table.pay_card_items')
+                    ->where('delivered_order_id = ?', (int) ($order['id'] ?? 0))
+                    ->where('status = ?', 'delivered')
+                    ->limit(1)
+            );
+            if ($card) {
+                return Common::url(
+                    '/action/' . self::ACTION . '?do=delivery&out_trade_no=' . rawurlencode((string) $order['out_trade_no']),
+                    $options->index
+                );
+            }
+        }
+
+        return '';
+    }
+
     private static function renderProductActionArea(
         array $product,
         Options $options,
@@ -1251,7 +1389,13 @@ class Plugin implements PluginInterface
         string $buttonClass,
         array $state
     ): string {
+        $deliveryUrl = self::currentVisitorCardDeliveryUrl($product, $options);
         if (empty($state['can_buy'])) {
+            if ($deliveryUrl !== '') {
+                return '<a class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
+                    . htmlspecialchars($deliveryUrl) . '">' . htmlspecialchars(_t('查看我的卡密')) . '</a>';
+            }
+
             if (($state['status'] ?? '') === 'login_required') {
                 return '<a class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
                     . htmlspecialchars((string) $options->loginUrl) . '">' . htmlspecialchars((string) $state['label']) . '</a>';
@@ -1282,6 +1426,11 @@ class Plugin implements PluginInterface
                 . '<button type="submit" class="' . htmlspecialchars($buttonClass) . '">'
                 . htmlspecialchars($labels[$gateway] ?? $gateway)
                 . '</button></form>';
+        }
+
+        if ($deliveryUrl !== '') {
+            $buttons[] = '<a class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
+                . htmlspecialchars($deliveryUrl) . '">' . htmlspecialchars(_t('查看我的卡密')) . '</a>';
         }
 
         return implode('', $buttons);

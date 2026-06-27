@@ -2,6 +2,34 @@
 
 Date: 2026-06-25
 
+## 2026-06-27 Article Product Display Stability (v0.4.5)
+
+### Change
+
+Stabilized the article editor to frontend product-panel path so an article-bound card-code product is easier to insert, preview, and diagnose before real payment testing.
+
+### Scope
+
+- Added a cursor-position editor button for inserting `[typechopay_product]`, while retaining the save-time top insertion option.
+- Added editor visibility status for shortcode, global auto-injection, and theme-helper fallback paths.
+- Added a frontend preview link from the article editor when the current content already has a permalink.
+- Added owner-limited `查看我的卡密` action rendering for card-code products with delivered cards.
+- Added admin-only product-panel diagnostics for missing deliverables, no compatible gateway, and empty stock.
+
+### Boundary
+
+This is a display-stability change. It does not add payment popups, local QR JavaScript, a buyer user center, refunds, or membership/download deliverables.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-27 Theme Integration and Editor Diagnostics (v0.4.4)
 
 ### Change
