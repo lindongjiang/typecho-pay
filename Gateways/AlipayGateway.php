@@ -129,7 +129,7 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
     {
         AlipaySdk::ensureAop();
         $client = new \AopClient();
-        $client->gatewayUrl = 'https://openapi.alipay.com/gateway.do';
+        $client->gatewayUrl = $this->gatewayUrl();
         $client->appId = $this->config['alipayAppId'];
         $client->rsaPrivateKey = $this->config['alipayPrivateKey'];
         $client->alipayrsaPublicKey = $this->config['alipayPublicKey'];
@@ -138,5 +138,23 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         $client->charset = 'UTF-8';
 
         return $client;
+    }
+
+    private function gatewayUrl(): string
+    {
+        $url = trim((string) ($this->config['alipayGatewayUrl'] ?? ''));
+        if ($url === '') {
+            return 'https://openapi.alipay.com/gateway.do';
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || empty($parts['host'])
+            || ($parts['path'] ?? '') === '') {
+            return 'https://openapi.alipay.com/gateway.do';
+        }
+
+        return $url;
     }
 }

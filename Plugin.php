@@ -54,7 +54,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.5
+ * @version 0.4.6
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -230,6 +230,7 @@ class Plugin implements PluginInterface
         $form->addInput($alipayMode);
 
         $form->addInput(new Text('alipayAppId', null, '', _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
+        $form->addInput(new Text('alipayGatewayUrl', null, 'https://openapi.alipay.com/gateway.do', _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
         $form->addInput(new Textarea('alipayPrivateKey', null, '', _t('支付宝应用私钥'), _t('在支付宝开放平台普通公钥模式下生成的应用私钥（RSA2），以 <code>-----BEGIN RSA PRIVATE KEY-----</code> 开头。<br><strong>这是敏感信息，请勿截图外泄！</strong>')));
         $form->addInput(new Textarea('alipayPublicKey', null, '', _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签），以 <code>-----BEGIN PUBLIC KEY-----</code> 开头。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。')));
         $form->addInput(new Text('alipaySellerId', null, '', _t('支付宝 Seller ID（可选）'), _t('填写后会校验收款账号，提高安全性。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
@@ -708,10 +709,29 @@ class Plugin implements PluginInterface
             'wechatApiV3Key' => (string) ($plugin->wechatApiV3Key ?? ''),
             'alipayMode' => (string) ($plugin->alipayMode ?? 'page'),
             'alipayAppId' => (string) ($plugin->alipayAppId ?? ''),
+            'alipayGatewayUrl' => self::normalizeAlipayGatewayUrl((string) ($plugin->alipayGatewayUrl ?? '')),
             'alipayPrivateKey' => (string) ($plugin->alipayPrivateKey ?? ''),
             'alipayPublicKey' => (string) ($plugin->alipayPublicKey ?? ''),
             'alipaySellerId' => (string) ($plugin->alipaySellerId ?? ''),
         ];
+    }
+
+    private static function normalizeAlipayGatewayUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return 'https://openapi.alipay.com/gateway.do';
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || empty($parts['host'])
+            || ($parts['path'] ?? '') === '') {
+            return 'https://openapi.alipay.com/gateway.do';
+        }
+
+        return $url;
     }
 
     /**

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.6 - 2026-06-27
+
+### Alipay sandbox
+
+- Added an `alipayGatewayUrl` plugin setting so sandbox tests can use `https://openapi-sandbox.dl.alipaydev.com/gateway.do`.
+- Changed the Alipay AOP client to read the configured gateway URL instead of always using the production gateway.
+- Documented the Alipay sandbox gateway in the settings help page and added a regression test for the gateway configuration.
+
 ## 0.4.5 - 2026-06-27
 
 ### Article product display

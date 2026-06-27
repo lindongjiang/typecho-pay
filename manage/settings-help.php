@@ -160,12 +160,13 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
                         <li>上传应用公钥，获取 <strong>支付宝公钥</strong></li>
                     </ul>
                 </li>
-                <li>在插件设置中填写 AppID、应用私钥、支付宝公钥</li>
+                <li>在插件设置中填写 AppID、网关地址、应用私钥、支付宝公钥</li>
                 <li>在支付宝开放平台 → 应用配置 → 开发设置 中填写上方的异步通知地址</li>
             </ol>
             <p><strong>证书模式：</strong>当前插件暂不支持支付宝公钥证书模式。如果你的应用已经使用公钥证书模式，请先改用普通公钥模式，或后续扩展证书字段。</p>
             <p><strong>注意事项：</strong></p>
             <ul>
+                <li><strong>沙箱测试</strong>请把支付宝网关地址设置为 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>；正式环境使用 <code>https://openapi.alipay.com/gateway.do</code></li>
                 <li><strong>应用私钥</strong>是敏感信息，请勿截图外泄或提交到代码仓库</li>
                 <li><strong>支付宝公钥</strong>不是应用公钥，注意区分</li>
                 <li>Page Pay 模式会跳转支付宝收银台，Precreate 模式生成二维码</li>
@@ -225,7 +226,7 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
             </ul>
 
             <h4 style="margin-top:15px;">Q: 如何切换支付环境？</h4>
-            <p>A: PayPay 可以在插件设置中切换 Sandbox/Staging/Production 环境。微信和支付宝没有环境切换，使用各自的测试/生产账号即可。</p>
+            <p>A: PayPay 可以在插件设置中切换 Sandbox/Staging/Production 环境。支付宝通过“支付宝网关地址”切换沙箱/正式环境。微信支付使用微信侧测试/生产账号和证书配置。</p>
 
             <h4 style="margin-top:15px;">Q: 金额单位是什么？</h4>
             <p>A: </p>

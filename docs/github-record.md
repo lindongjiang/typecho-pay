@@ -2,6 +2,34 @@
 
 Date: 2026-06-25
 
+## 2026-06-27 Alipay Sandbox Gateway Configuration (v0.4.6)
+
+### Change
+
+Prepared the Alipay integration for real sandbox testing by making the AOP gateway URL configurable from the TypechoPay plugin settings.
+
+### Scope
+
+- Added `alipayGatewayUrl` to the plugin settings.
+- Defaulted blank or invalid gateway URLs back to `https://openapi.alipay.com/gateway.do`.
+- Documented the sandbox gateway `https://openapi-sandbox.dl.alipaydev.com/gateway.do`.
+- Changed `AlipayGateway` so the SDK client uses the configured gateway URL instead of a hardcoded production endpoint.
+- Added `tests/AlipayGatewayTest.php` as a regression guard.
+
+### Boundary
+
+This does not change Alipay key mode support. The plugin still supports ordinary public-key mode only, not public-key certificate mode.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-27 Article Product Display Stability (v0.4.5)
 
 ### Change

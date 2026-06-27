@@ -38,7 +38,7 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 - **基础设置**：启用支付方式、默认币种、入口签名密钥
 - **PayPay 配置**：环境、API Key、API Secret、Merchant ID
 - **微信支付配置**：AppID、商户号、证书序列号、私钥路径、APIv3 Key 等
-- **支付宝配置**：支付模式、AppID、应用私钥、支付宝公钥、Seller ID
+- **支付宝配置**：支付模式、AppID、网关地址、应用私钥、支付宝公钥、Seller ID
 
 ## 短代码
 
@@ -183,6 +183,7 @@ PayPay：
 
 - 创建 Page Pay / Precreate 订单依赖官方 `alipaysdk/openapi` 包内的 v2 AOP 类。
 - 当前只支持支付宝普通公钥模式，暂不支持公钥证书模式。
+- 支付宝网关地址可配置；沙箱测试使用 `https://openapi-sandbox.dl.alipaydev.com/gateway.do`，正式环境使用 `https://openapi.alipay.com/gateway.do`。
 - 异步通知使用 SDK `rsaCheckV1` 验签，并校验 `app_id`、可选 `seller_id`、订单金额和状态。
 - 主动查单使用 `AlipayTradeQueryRequest`。
 - 只有 `TRADE_SUCCESS` / `TRADE_FINISHED` 会标记已支付。
