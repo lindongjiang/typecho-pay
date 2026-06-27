@@ -53,6 +53,13 @@ ap_assert(strpos($pluginSource, 'typechopay_pay_mode') !== false, 'Editor panel 
 ap_assert(strpos($pluginSource, 'typechopay_insert_shortcode') !== false, 'Editor panel can insert shortcode');
 ap_assert(strpos($pluginSource, 'typechopay_card_lines') !== false, 'Editor panel has pasted card import field');
 ap_assert(strpos($pluginSource, 'name="typechopay_currency" value="CNY"') !== false, 'Editor panel fixes article products to CNY');
+ap_assert(strpos($pluginSource, 'data-typechopay-card-tabs') !== false, 'Editor card management uses tabs');
+ap_assert(strpos($pluginSource, 'data-typechopay-card-tab="list"') !== false, 'Editor has card list tab');
+ap_assert(strpos($pluginSource, 'data-typechopay-card-tab="import"') !== false, 'Editor has card import tab');
+ap_assert(strpos($pluginSource, 'min="0.01"') !== false, 'Editor amount input accepts 0.01 yuan minimum');
+ap_assert(strpos($pluginSource, 'assertCnyYuanAmount') !== false, 'Editor saves yuan input as CNY fen');
+ap_assert(strpos($pluginSource, 'PayPay') === false, 'Plugin config and frontend paths no longer expose PayPay');
+ap_assert(strpos($pluginSource, 'JPY') === false, 'Plugin config and frontend paths no longer expose JPY');
 ap_assert(strpos($pluginSource, '付费下载') === false, 'Editor panel hides reserved delivery modes');
 ap_assert(strpos($pluginSource, '$deliverableTargetType') !== false, 'Editor save keeps page/post deliverable target type');
 ap_assert(substr_count($pluginSource, 'containsExplicitProductUiShortcode') >= 3, 'Auto inject skips only explicit product UI shortcodes');
@@ -81,6 +88,9 @@ ap_assert(strpos($cssSource, '--typechopay-primary') !== false, 'CSS exposes Typ
 ap_assert(strpos($productsSource, '商城专题') !== false, 'Admin labels TypechoPay categories as shop topics');
 ap_assert(strpos($productsSource, '绑定文章') !== false, 'Admin shows bound article information');
 ap_assert(strpos($productsSource, '$boundContentCategories') !== false, 'Admin shows bound article categories');
+ap_assert(strpos($productsSource, '金额（元）') !== false, 'Product admin edits CNY amounts in yuan');
+ap_assert(strpos($productsSource, 'min="0.01"') !== false, 'Product admin accepts 0.01 yuan minimum');
+ap_assert(strpos($productsSource, 'JPY') === false, 'Product admin no longer exposes JPY');
 ap_assert(strpos($pluginSource, '绑定商品 ID') !== false, 'Editor shows bound product id');
 ap_assert(strpos($pluginSource, '商品状态') !== false, 'Editor shows product status');
 ap_assert(strpos($pluginSource, '当前库存') !== false, 'Editor shows current stock summary');
@@ -88,7 +98,7 @@ ap_assert(strpos($pluginSource, '自动插入') !== false, 'Editor shows auto-in
 ap_assert(strpos($pluginSource, '前台显示') !== false, 'Editor shows frontend visibility status');
 ap_assert(strpos($pluginSource, '保存时在正文顶部插入购买模块') !== false, 'Editor defaults toward shortcode insertion on save');
 ap_assert(strpos($pluginSource, '插入购买模块到光标') !== false, 'Editor can insert the product shortcode at cursor');
-ap_assert(strpos($pluginSource, '查看前台效果') !== false, 'Editor links to frontend preview');
+ap_assert(strpos($pluginSource, '查看前台') !== false, 'Editor links to frontend preview');
 ap_assert(strpos($pluginSource, '查看我的卡密') !== false, 'Purchased card products expose delivery link');
 ap_assert(strpos($pluginSource, 'no deliverable') !== false, 'Product panel diagnostics include missing deliverable');
 ap_assert(strpos($pluginSource, 'no gateway') !== false, 'Product panel diagnostics include missing gateway');

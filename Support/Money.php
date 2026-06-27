@@ -21,7 +21,7 @@ final class Money
     public static function assertCurrency($currency): string
     {
         $value = strtoupper(trim((string) $currency));
-        if (!in_array($value, ['CNY', 'JPY'], true)) {
+        if ($value !== 'CNY') {
             throw new \InvalidArgumentException('Unsupported payment currency.');
         }
 
@@ -46,15 +46,26 @@ final class Money
         return ((int) $yuan * 100) + (int) $fen;
     }
 
+    public static function assertCnyYuanAmount($amount): int
+    {
+        $value = self::yuanStringToFen((string) $amount);
+        if ($value <= 0) {
+            throw new \InvalidArgumentException('Invalid CNY amount.');
+        }
+
+        return $value;
+    }
+
+    public static function formatCnyInput(int $amount): string
+    {
+        return number_format($amount / 100, 2, '.', '');
+    }
+
     public static function formatForDisplay(int $amount, string $currency): string
     {
         $currency = strtoupper($currency);
         if ($currency === 'CNY') {
             return '¥' . number_format($amount / 100, 2, '.', '');
-        }
-
-        if ($currency === 'JPY') {
-            return '¥' . number_format($amount, 0, '.', ',');
         }
 
         return $currency . ' ' . $amount;

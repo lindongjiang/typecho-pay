@@ -1,6 +1,6 @@
 {
   "name": "mantou/typecho-pay",
-  "description": "Typecho order center and payment gateway adapter for PayPay, WeChat Pay, and Alipay.",
+  "description": "Typecho order center and CNY payment gateway adapter for WeChat Pay and Alipay.",
   "type": "typecho-plugin",
   "license": "GPL-2.0-or-later",
   "require": {

@@ -154,8 +154,8 @@ if ($request->isPost()) {
                 throw new InvalidArgumentException('请填写 1-255 字的商品标题。');
             }
 
-            $amount = Money::assertAmount($request->get('amount'));
-            $currency = Money::assertCurrency($request->get('currency'));
+            $amount = Money::assertCnyYuanAmount($request->get('amount'));
+            $currency = 'CNY';
             $policy = strtolower(trim((string) $request->get('purchase_policy'))) ?: 'repeatable';
             if (!in_array($policy, ['once', 'repeatable', 'limited'], true)) {
                 throw new InvalidArgumentException('购买策略无效。');
@@ -283,8 +283,8 @@ if ($request->isPost()) {
                 throw new InvalidArgumentException('请填写 1-255 字的商品标题。');
             }
 
-            $amount = Money::assertAmount($request->get('amount'));
-            $currency = Money::assertCurrency($request->get('currency'));
+            $amount = Money::assertCnyYuanAmount($request->get('amount'));
+            $currency = 'CNY';
             $policy = strtolower(trim((string) $request->get('purchase_policy'))) ?: 'repeatable';
             if (!in_array($policy, ['once', 'repeatable', 'limited'], true)) {
                 throw new InvalidArgumentException('购买策略无效。');
@@ -703,12 +703,9 @@ include 'menu.php';
                     <input type="text" name="title" value="<?php echo htmlspecialchars($editProduct['title']); ?>" style="width:360px;" required>
                 </p>
                 <p>
-                    <label><?php _e('金额'); ?></label><br>
-                    <input type="number" name="amount" min="1" value="<?php echo (int) $editProduct['amount']; ?>" style="width:180px;" required>
-                    <select name="currency">
-                        <option value="CNY" <?php if ($editProduct['currency'] === 'CNY') echo 'selected'; ?>>CNY</option>
-                        <option value="JPY" <?php if ($editProduct['currency'] === 'JPY') echo 'selected'; ?>>JPY</option>
-                    </select>
+                    <label><?php _e('金额（元）'); ?></label><br>
+                    <input type="number" name="amount" min="0.01" step="0.01" value="<?php echo htmlspecialchars(Money::formatCnyInput((int) $editProduct['amount'])); ?>" style="width:180px;" required>
+                    <input type="hidden" name="currency" value="CNY">
                 </p>
                 <p>
                     <label><?php _e('状态'); ?></label><br>
@@ -829,12 +826,9 @@ include 'menu.php';
                     <input type="text" name="title" placeholder="100 元充值卡" style="width:360px;" required>
                 </p>
                 <p>
-                    <label><?php _e('金额'); ?></label><br>
-                    <input type="number" name="amount" min="1" placeholder="CNY 用分，JPY 用日元" style="width:180px;" required>
-                    <select name="currency">
-                        <option value="CNY">CNY</option>
-                        <option value="JPY">JPY</option>
-                    </select>
+                    <label><?php _e('金额（元）'); ?></label><br>
+                    <input type="number" name="amount" min="0.01" step="0.01" placeholder="最低 0.01" style="width:180px;" required>
+                    <input type="hidden" name="currency" value="CNY">
                 </p>
                 <p>
                     <label><?php _e('购买策略'); ?></label><br>
@@ -1043,7 +1037,7 @@ include 'menu.php';
                                 </small>
                             <?php endif; ?>
                         </td>
-                        <td><?php echo htmlspecialchars($product['currency'] . ' ' . $product['amount']); ?></td>
+                        <td><?php echo htmlspecialchars(Money::formatForDisplay((int) $product['amount'], 'CNY')); ?></td>
                         <td><?php echo htmlspecialchars($product['status']); ?></td>
                         <td><small><?php echo $catName !== '' ? htmlspecialchars($catName) : '-'; ?></small></td>
                         <td>

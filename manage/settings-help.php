@@ -9,10 +9,8 @@ if (!defined('__TYPECHO_ADMIN__')) {
 include 'header.php';
 include 'menu.php';
 
-$notifyPayPay = Common::url('/action/typechopay?do=notify&gateway=paypay', $options->index);
 $notifyWechat = Common::url('/action/typechopay?do=notify&gateway=wechat', $options->index);
 $notifyAlipay = Common::url('/action/typechopay?do=notify&gateway=alipay', $options->index);
-$returnPayPay = Common::url('/action/typechopay?do=return&gateway=paypay&out_trade_no={订单号}', $options->index);
 $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $options->index);
 ?>
 
@@ -22,42 +20,27 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
 
         <div class="table-description">
             <h2>TypechoPay 支付设置说明</h2>
-            <p>本页面展示支付网关的回调地址和配置指南。实际配置请在 <a href="<?php echo htmlspecialchars($options->adminUrl); ?>options-plugin.php?config=TypechoPay">插件设置</a> 中填写。</p>
+            <p>当前插件后台只保留人民币支付。文章和商品表单中的金额按“元”填写，最低 0.01 元；插件内部会按分保存并传给支付平台。</p>
+            <p>实际商户参数请在 <a href="<?php echo htmlspecialchars($options->adminUrl); ?>options-plugin.php?config=TypechoPay">插件设置</a> 中填写。</p>
         </div>
 
-        <!-- 回调地址 -->
         <div class="table-description" style="margin-top:30px;">
-            <h3>📋 回调地址（Webhook / 异步通知）</h3>
-            <p>以下地址需要填写到对应支付平台的回调配置中：</p>
-
+            <h3>回调地址</h3>
             <table class="typecho-list-table" style="margin-top:15px;">
-                <colgroup>
-                    <col width="15%">
-                    <col width="20%">
-                    <col width="65%">
-                </colgroup>
                 <thead>
                 <tr>
                     <th>支付方式</th>
                     <th>用途</th>
-                    <th>回调地址</th>
+                    <th>地址</th>
                 </tr>
                 </thead>
                 <tbody>
-                <tr>
-                    <td><strong>PayPay</strong></td>
-                    <td>Webhook 通知</td>
-                    <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($notifyPayPay); ?></code>
-                        <br><small style="color:#888;">在 PayPay 商户后台 → Webhook 设置中填写此 URL</small>
-                    </td>
-                </tr>
                 <tr>
                     <td><strong>微信支付</strong></td>
                     <td>异步通知</td>
                     <td>
                         <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($notifyWechat); ?></code>
-                        <br><small style="color:#888;">在微信支付商户平台 → 开发配置 → 支付配置 中填写此 URL</small>
+                        <br><small style="color:#888;">填写到微信支付商户平台的支付通知配置中。</small>
                     </td>
                 </tr>
                 <tr>
@@ -65,184 +48,84 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
                     <td>异步通知</td>
                     <td>
                         <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($notifyAlipay); ?></code>
-                        <br><small style="color:#888;">在支付宝开放平台 → 应用配置 → 开发设置 中填写此 URL</small>
-                    </td>
-                </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- 支付完成回跳地址 -->
-        <div class="table-description" style="margin-top:30px;">
-            <h3>🔄 支付完成回跳地址</h3>
-            <p>支付完成后，部分支付平台会引导用户跳转回此地址：</p>
-
-            <table class="typecho-list-table" style="margin-top:15px;">
-                <colgroup>
-                    <col width="15%">
-                    <col width="65%">
-                </colgroup>
-                <thead>
-                <tr>
-                    <th>支付方式</th>
-                    <th>回跳地址</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td><strong>PayPay</strong></td>
-                    <td>
-                        <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($returnPayPay); ?></code>
-                        <br><small style="color:#888;">系统自动处理，无需手动配置</small>
+                        <br><small style="color:#888;">填写到支付宝开放平台应用的异步通知地址中。</small>
                     </td>
                 </tr>
                 <tr>
                     <td><strong>支付宝</strong></td>
+                    <td>同步回跳</td>
                     <td>
                         <code style="background:#f6f7f8;padding:5px 10px;display:inline-block;margin:5px 0;"><?php echo htmlspecialchars($returnAlipay); ?></code>
-                        <br><small style="color:#888;">支付宝 Page Pay 模式会使用此地址，系统自动处理</small>
+                        <br><small style="color:#888;">Page Pay 模式使用，通常无需手动填写。</small>
                     </td>
                 </tr>
                 </tbody>
             </table>
         </div>
 
-        <!-- 配置指南 -->
         <div class="table-description" style="margin-top:30px;">
-            <h3>🇯🇵 PayPay 配置指南</h3>
-            <p>PayPay 是日本主流移动支付，当前插件使用 PayPay Open Payment API 的 Dynamic QR。</p>
+            <h3>支付宝配置</h3>
             <ol>
-                <li>请通过 PayPay 官方加盟店/开发者流程申请 OPA 权限，并获取 <strong>API Key</strong>、<strong>API Secret</strong> 和 <strong>Merchant ID</strong></li>
-                <li>参考 <a href="https://www.paypay.ne.jp/opa/doc/jp/v1.0/dynamicqrcode" target="_blank">PayPay Dynamic QR 文档</a> 配置 Dynamic QR 支付</li>
-                <li>设置 Webhook URL 为上方的 PayPay 回调地址</li>
-                <li>在插件设置中填写以上信息，环境选择 <strong>Sandbox</strong> 进行测试</li>
-                <li>测试完成后切换到 <strong>Production</strong> 环境</li>
+                <li>在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> 创建应用，并开通电脑网站支付或当面付。</li>
+                <li>接口加签方式选择 <strong>普通公钥模式</strong>，生成应用私钥，上传应用公钥后复制支付宝公钥。</li>
+                <li>插件设置中填写 AppID、网关地址、应用私钥、支付宝公钥和可选 Seller ID。</li>
+                <li>沙箱测试网关：<code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>；正式环境网关：<code>https://openapi.alipay.com/gateway.do</code>。</li>
             </ol>
-            <p><strong>注意事项：</strong></p>
-            <ul>
-                <li>PayPay 只支持 JPY（日元），金额为整数</li>
-                <li>Sandbox 环境用于开发测试，不会产生真实交易</li>
-            </ul>
+            <p><strong>注意：</strong>当前暂不支持支付宝公钥证书模式。请使用普通公钥模式，或后续再扩展证书字段。</p>
         </div>
 
         <div class="table-description" style="margin-top:30px;">
-            <h3>💚 微信支付配置指南</h3>
+            <h3>微信支付配置</h3>
             <ol>
-                <li>访问 <a href="https://pay.weixin.qq.com/" target="_blank">微信支付商户平台</a>，确保已开通 Native 支付</li>
-                <li>在 <strong>API 安全</strong> 页面：
-                    <ul>
-                        <li>下载 <strong>商户 API 证书</strong>（apiclient_cert.pem、apiclient_key.pem）</li>
-                        <li>记录 <strong>证书序列号</strong></li>
-                        <li>设置 <strong>APIv3 Key</strong>（32 位密钥）</li>
-                    </ul>
-                </li>
-                <li>在 <strong>API 安全</strong> 页面下载 <strong>微信支付平台证书</strong>（用于回调验签）</li>
-                <li>在插件设置中填写 AppID、商户号、证书序列号、私钥路径、APIv3 Key 等</li>
-                <li>在微信支付商户平台 → 开发配置 → 支付配置 中填写上方的回调地址</li>
+                <li>确认微信支付商户已开通 Native 扫码支付。</li>
+                <li>在 API 安全页面准备商户 API 私钥、证书序列号、平台公钥/证书和 APIv3 Key。</li>
+                <li>插件设置中填写 AppID、商户号、证书序列号、私钥路径、平台公钥/证书路径和 APIv3 Key。</li>
+                <li>把上方微信异步通知地址填写到微信支付商户平台。</li>
             </ol>
-            <p><strong>注意事项：</strong></p>
-            <ul>
-                <li>私钥文件（apiclient_key.pem）请放在网站目录外，确保 PHP 有读取权限</li>
-                <li>APIv3 Key 用于解密回调通知，务必正确设置</li>
-                <li>微信支付只支持 CNY（人民币），金额单位为分</li>
-            </ul>
+            <p><strong>注意：</strong>私钥文件建议放在网站目录外，并确认 PHP 进程有读取权限。</p>
         </div>
 
         <div class="table-description" style="margin-top:30px;">
-            <h3>🔵 支付宝配置指南</h3>
+            <h3>文章卡密流程</h3>
             <ol>
-                <li>访问 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> 创建应用</li>
-                <li>在应用详情中开通 <strong>电脑网站支付</strong> 或 <strong>当面付</strong> 能力</li>
-                <li>在 <strong>开发设置 → 接口加签方式</strong> 中：
-                    <ul>
-                        <li>选择 <strong>普通公钥模式</strong></li>
-                        <li>使用支付宝密钥生成工具生成 <strong>RSA2 密钥对</strong></li>
-                        <li>上传应用公钥，获取 <strong>支付宝公钥</strong></li>
-                    </ul>
-                </li>
-                <li>在插件设置中填写 AppID、网关地址、应用私钥、支付宝公钥</li>
-                <li>在支付宝开放平台 → 应用配置 → 开发设置 中填写上方的异步通知地址</li>
+                <li>编辑文章，在底部“文章付费与卡密”中选择“卡密管理”。</li>
+                <li>填写价格（元）、购买权限和商品标题，保存文章后自动创建绑定商品。</li>
+                <li>在“卡密列表 / 添加卡密”页签中查看库存或粘贴卡密，保存文章即可导入。</li>
+                <li>需要批量预览、文件导入、作废或销售查询时，再进入“商品与卡密 / 卡密库存 / 卡密销售”。</li>
             </ol>
-            <p><strong>证书模式：</strong>当前插件暂不支持支付宝公钥证书模式。如果你的应用已经使用公钥证书模式，请先改用普通公钥模式，或后续扩展证书字段。</p>
-            <p><strong>注意事项：</strong></p>
-            <ul>
-                <li><strong>沙箱测试</strong>请把支付宝网关地址设置为 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>；正式环境使用 <code>https://openapi.alipay.com/gateway.do</code></li>
-                <li><strong>应用私钥</strong>是敏感信息，请勿截图外泄或提交到代码仓库</li>
-                <li><strong>支付宝公钥</strong>不是应用公钥，注意区分</li>
-                <li>Page Pay 模式会跳转支付宝收银台，Precreate 模式生成二维码</li>
-                <li>支付宝只支持 CNY（人民币）。插件短代码中的 CNY 金额单位为“分”，插件内部会在调用支付宝接口时转换为“元”。</li>
-            </ul>
         </div>
 
-        <!-- 短代码使用说明 -->
         <div class="table-description" style="margin-top:30px;">
-            <h3>📝 短代码使用说明</h3>
-            <p>推荐使用商品模式创建支付入口，文章 HTML 只保存商品标识，点击时服务端读取当前价格：</p>
+            <h3>短代码</h3>
+            <p>推荐使用商品模式，价格和交付规则始终从服务端商品读取：</p>
+            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay_product]</code></pre>
+            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product="article-123-premium" gateways="alipay"]</code></pre>
+            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product_id="18" gateways="wechat,alipay"]</code></pre>
 
-            <h4 style="margin-top:15px;">商品支付按钮（推荐）</h4>
-            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product="article-123-premium" gateways="paypay,alipay"]</code></pre>
-            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay product_id="18" gateways="alipay"]</code></pre>
-            <p><strong>说明：</strong>商品价格、币种、购买策略和交付规则来自 <code>pay_products</code> / <code>pay_product_deliverables</code>。管理员改价后，旧缓存页面也会按服务端当前商品价格创建订单。</p>
-            <p><strong>卡密商品：</strong>请在左侧 <strong>TypechoPay → 商品与卡密</strong> 创建商品并导入库存。用户支付成功后会跳转到受订单凭证保护的卡密交付页。</p>
-
-            <h4 style="margin-top:15px;">旧版金额支付按钮（兼容）</h4>
-            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay amount="500" currency="JPY" subject="商品名称" gateways="paypay"]</code></pre>
-            <p><strong>参数说明：</strong></p>
-            <ul>
-                <li><code>amount</code>：金额，<strong>最小货币单位</strong>（JPY 为日元整数，CNY 为分）</li>
-                <li><code>currency</code>：币种（JPY 或 CNY），可选，默认使用插件设置的默认币种</li>
-                <li><code>subject</code>：商品/订单标题，可选，默认使用文章标题</li>
-                <li><code>gateways</code>：指定支付方式（paypay/wechat/alipay），多个用逗号分隔，可选</li>
-            </ul>
-            <p><strong>注意：</strong>旧版金额短代码会把金额写入页面签名，适合过渡兼容；开启 CDN 或静态缓存的网站正式改价时，应迁移到商品模式。</p>
+            <p>旧版金额短代码仍保留兼容。这里的 <code>amount</code> 仍按“分”填写：</p>
+            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay amount="500" currency="CNY" subject="商品名称" gateways="alipay"]</code></pre>
+            <p><code>amount="500"</code> 表示 5.00 元。新商品建议使用文章底部面板或商品模式，不建议继续把价格写死在文章正文里。</p>
 
             <h4 style="margin-top:15px;">付费阅读内容</h4>
             <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay_content]
 这里是购买后才能看到的隐藏内容。
 [/typechopay_content]</code></pre>
-            <p>也可以绑定到指定业务对象：</p>
-            <pre style="background:#f6f7f8;padding:15px;border:1px solid #ddd;overflow-x:auto;"><code>[typechopay_content biz_type="post" biz_id="123"]
-隐藏内容...
-[/typechopay_content]</code></pre>
         </div>
 
-        <!-- 常见问题 -->
         <div class="table-description" style="margin-top:30px;">
-            <h3>❓ 常见问题</h3>
+            <h3>常见问题</h3>
+            <h4>支付成功但内容没有解锁？</h4>
+            <p>到“支付订单”找到对应订单，点击“重发交付”。仍失败时再检查 PHP 错误日志。</p>
 
-            <h4 style="margin-top:15px;">Q: 支付成功但内容没有解锁？</h4>
-            <p>A: 请在后台"支付订单"页面找到对应订单，点击"重发交付"按钮。如果仍然失败，请检查 PHP 错误日志。</p>
+            <h4>支付成功但卡密没有发出？</h4>
+            <p>先补充库存，再到“支付订单”重发交付。重复回调或重复重发不会重复发同一张已交付卡密。</p>
 
-            <h4 style="margin-top:15px;">Q: 支付成功但卡密没有发出？</h4>
-            <p>A: 如果订单显示 <code>partial</code> 或 <code>failed</code>，请先在“商品与卡密”补充库存，再回到“支付订单”点击“重发交付”。重复回调或重复重发不会重复发同一张已交付卡密。</p>
+            <h4>金额应该怎么填？</h4>
+            <p>后台文章和商品表单按“元”填写，最低 0.01 元。旧版金额短代码按“分”填写，仅作为兼容层保留。</p>
 
-            <h4 style="margin-top:15px;">Q: 微信支付回调一直失败？</h4>
-            <p>A: 请检查：</p>
-            <ul>
-                <li>回调地址是否正确填写到微信支付商户平台</li>
-                <li>APIv3 Key 是否正确设置</li>
-                <li>平台证书路径是否正确，PHP 是否有读取权限</li>
-                <li>服务器是否支持 HTTPS（微信支付要求回调地址为 HTTPS）</li>
-            </ul>
-
-            <h4 style="margin-top:15px;">Q: 如何切换支付环境？</h4>
-            <p>A: PayPay 可以在插件设置中切换 Sandbox/Staging/Production 环境。支付宝通过“支付宝网关地址”切换沙箱/正式环境。微信支付使用微信侧测试/生产账号和证书配置。</p>
-
-            <h4 style="margin-top:15px;">Q: 金额单位是什么？</h4>
-            <p>A: </p>
-            <ul>
-                <li><strong>JPY（日元）：</strong>最小单位是日元整数，<code>amount="500"</code> 表示 500 日元</li>
-                <li><strong>CNY（人民币）：</strong>最小单位是分，<code>amount="500"</code> 表示 5.00 元</li>
-            </ul>
-
-            <h4 style="margin-top:15px;">Q: 升级后商品模式提示商品表未准备？</h4>
-            <p>A: 请在 Typecho 后台停用并重新启用 TypechoPay，让插件执行 schema 版本迁移。迁移只新增列和表，不会删除历史订单。</p>
+            <h4>升级后看不到新面板？</h4>
+            <p>请在 Typecho 后台停用并重新启用 TypechoPay，让插件执行 schema 迁移并刷新后台菜单。</p>
         </div>
-
-        <div style="margin-top:40px;padding:20px;background:#f9f9f9;border:1px solid #ddd;">
-            <p><strong>需要更多帮助？</strong>请查看插件目录下的 <code>README.md</code> 文件或 <code>docs/</code> 目录下的文档。</p>
-        </div>
-
     </div>
 </div>
 

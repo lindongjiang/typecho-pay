@@ -1,6 +1,6 @@
 # TypechoPay
 
-TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付网关适配器”实现。当前版本提供：
+TypechoPay 是一个 Typecho 支付插件，按“订单中心 + 文章商品 + 卡密交付”实现。当前版本面向人民币支付场景，提供：
 
 - 统一订单表 `pay_orders` 和通知事件表 `pay_events`
 - 付费权益表 `pay_entitlements`
@@ -8,7 +8,6 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 - 卡密批次表 `pay_card_batches` 和卡密库存表 `pay_card_items`
 - 一次性入口 nonce 表 `pay_nonces`
 - `/action/typechopay` 统一创建、通知、查询、返回入口
-- PayPay Dynamic QR 直接 HMAC 客户端
 - 微信支付 Native、支付宝 Page/Precreate 的 SDK 接入层和主动查单
 - 后台订单列表、商品与卡密管理、权益/交付重发入口
 - 商品短代码支付入口、旧金额短代码兼容层和入口防篡改签名
@@ -35,8 +34,7 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 
 插件配置在 **后台 → 控制台 → 插件 → TypechoPay → 设置** 中填写，包含：
 
-- **基础设置**：启用支付方式、默认币种、入口签名密钥
-- **PayPay 配置**：环境、API Key、API Secret、Merchant ID
+- **基础设置**：启用支付方式、入口签名密钥、文章商品卡自动插入位置
 - **微信支付配置**：AppID、商户号、证书序列号、私钥路径、APIv3 Key 等
 - **支付宝配置**：支付模式、AppID、网关地址、应用私钥、支付宝公钥、Seller ID
 
@@ -45,7 +43,7 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 推荐使用服务端商品模式：
 
 ```text
-[typechopay product="article-123-premium" gateways="paypay,alipay"]
+[typechopay product="article-123-premium" gateways="alipay"]
 ```
 
 或：
@@ -59,10 +57,10 @@ TypechoPay 是一个 Typecho 支付插件骨架，按“订单中心 + 多支付
 旧版短代码仍可使用：
 
 ```text
-[typechopay amount="500" currency="JPY" subject="AppFlex 30日权限" gateways="paypay"]
+[typechopay amount="500" currency="CNY" subject="AppFlex 30日权限" gateways="alipay"]
 ```
 
-`amount` 使用最小货币单位：JPY 为日元整数，CNY 为分。旧版短代码渲染时会把金额放入长期入口签名，适合过渡兼容；如果站点开启 CDN/静态缓存，管理员改价后旧 HTML 仍可能保留旧金额，正式商品建议迁移到 `product` / `product_id` 模式。已购买 `purchase_policy=once` 的访问者会看到“已购买”，不再显示付款按钮；`repeatable` 商品允许重复下单。PayPay 只会在 JPY 订单中展示，微信/支付宝只会在 CNY 订单中展示。
+旧版金额短代码中的 `amount` 仍按 CNY 分填写，`amount="500"` 表示 5.00 元。旧版短代码渲染时会把金额放入长期入口签名，适合过渡兼容；如果站点开启 CDN/静态缓存，管理员改价后旧 HTML 仍可能保留旧金额，正式商品建议迁移到 `product` / `product_id` 模式。已购买 `purchase_policy=once` 的访问者会看到“已购买”，不再显示付款按钮；`repeatable` 商品允许重复下单。
 
 付费阅读内容可以这样包裹：
 
@@ -113,8 +111,8 @@ TypechoPay
 操作流程：
 
 1. **创建文章**：先用 Typecho 原生文章写商品介绍、分类、SEO、封面、评论和使用说明。
-2. **开启卡密**：在文章编辑页底部的 **文章付费与卡密** 面板中选择“卡密管理”，填写价格（CNY，单位为分）和购买权限。保存时插件会自动创建或更新 `content_id = 当前文章 cid` 的商品。商品绑定是结构化数据，正文展示仍由 `[typechopay_product]`、全局自动插入或主题 helper 决定。
-3. **导入卡密**：文章保存后，可直接在同一底部面板粘贴卡密并再次保存文章完成导入；面板会显示库存、已售数量和最近卡密掩码。需要文件上传或导入预览时，继续使用 TypechoPay → 商品管理 → 导入卡密。
+2. **开启卡密**：在文章编辑页底部的 **文章付费与卡密** 面板中选择“卡密管理”，填写价格（元，最低 0.01）和购买权限。保存时插件会自动创建或更新 `content_id = 当前文章 cid` 的商品。商品绑定是结构化数据，正文展示仍由 `[typechopay_product]`、全局自动插入或主题 helper 决定。
+3. **导入卡密**：文章保存后，可在底部面板的“卡密列表 / 添加卡密”页签中查看库存或粘贴卡密，再次保存文章完成导入。需要文件上传或导入预览时，继续使用 TypechoPay → 商品管理 → 导入卡密。
 4. **编辑商品**：文章页只保留常用设置；更多标题、状态、购买策略、库存显示、封面和摘要等高级设置仍在商品管理页维护，这些影响购买或交付的规则变化会自动递增商品版本号。
 5. **查看库存**：TypechoPay → 卡密库存 → 按商品/状态/批次筛选，支持标记作废和标记泄露。
 6. **查看销售**：TypechoPay → 卡密销售 → 已交付卡密关联订单号、金额、网关、买家、交付状态、补发次数和最后错误。
@@ -164,14 +162,6 @@ TypechoPay
 
 ## 网关状态
 
-PayPay：
-
-- 已实现 Dynamic QR 的直接请求签名、创建二维码/支付链接、主动查询基础逻辑。
-- 主动查单使用 Dynamic QR 的 `/v2/codes/payments/{merchantPaymentId}`。
-- Webhook 会校验 `Authorization: hmac OPA-Auth:...`，并要求时间偏移不超过 120 秒。
-- 只在 `state=COMPLETED` 且签名有效时标记订单已支付。
-- 通知和主动查单都会先检查 PayPay 商户配置是否完整。
-
 微信支付：
 
 - 创建 Native 订单依赖官方 `wechatpay/wechatpay` SDK。
@@ -191,7 +181,6 @@ PayPay：
 ## 回调地址
 
 ```text
-/action/typechopay?do=notify&gateway=paypay
 /action/typechopay?do=notify&gateway=wechat
 /action/typechopay?do=notify&gateway=alipay
 ```
@@ -205,9 +194,6 @@ PayPay：
 ## 官方资料
 
 - WeChat Pay PHP SDK: https://github.com/wechatpay-apiv3/wechatpay-php
-- PayPay Dynamic QR: https://www.paypay.ne.jp/opa/doc/jp/v1.0/dynamicqrcode
-- PayPay HMAC: https://www.paypay.ne.jp/opa/doc/jp/v1.0/api_authorization.html
-- PayPay PHP SDK: https://github.com/paypay/paypayopa-sdk-php
 - Alipay PHP SDK: https://github.com/alipay/alipay-sdk-php-all (`composer require alipaysdk/openapi`)
 
 ## 安全边界

@@ -50,11 +50,11 @@ spl_autoload_register(function ($class) {
 /**
  * Typecho Pay
  *
- * 订单中心与多支付网关适配器，支持 PayPay、微信支付、支付宝的统一接入骨架。
+ * 订单中心与人民币支付网关适配器，支持微信支付、支付宝的统一接入骨架。
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.7
+ * @version 0.4.8
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -126,24 +126,14 @@ class Plugin implements PluginInterface
         $enabledGateways = new Checkbox(
             'enabledGateways',
             [
-                'paypay' => 'PayPay（日本，JPY）',
                 'wechat' => '微信支付（中国，CNY）',
                 'alipay' => '支付宝（中国，CNY）',
             ],
-            ['paypay'],
+            ['alipay'],
             _t('启用支付方式'),
-            _t('勾选需要启用的支付网关。未勾选的支付方式不会在前端显示。')
+            _t('当前后台只保留人民币支付方式。未勾选的支付方式不会在前端显示。')
         );
         $form->addInput($enabledGateways);
-
-        $defaultCurrency = new Select(
-            'defaultCurrency',
-            ['JPY' => 'JPY - 日元（PayPay 使用）', 'CNY' => 'CNY - 人民币（微信/支付宝使用）'],
-            'JPY',
-            _t('默认币种'),
-            _t('短代码未指定 currency 时使用此默认值。PayPay 只支持 JPY，微信和支付宝只支持 CNY。')
-        );
-        $form->addInput($defaultCurrency);
 
         $endpointSecret = new Password(
             'endpointSecret',
@@ -179,27 +169,6 @@ class Plugin implements PluginInterface
             _t('关闭后插件不再输出 assets/typechopay.css；适合主题已通过 typechopay/style.css 或自定义 CSS 完全覆盖前台展示。')
         );
         $form->addInput($loadFrontendCss);
-
-        // ============================================================
-        // PayPay 配置
-        // ============================================================
-
-        $paypayEnvironment = new Select(
-            'paypayEnvironment',
-            [
-                'sandbox' => 'Sandbox（测试环境，用于开发调试）',
-                'staging' => 'Staging（预发布环境）',
-                'production' => 'Production（生产环境，真实交易）',
-            ],
-            'sandbox',
-            _t('PayPay 环境'),
-            _t('当前使用 PayPay Open Payment API 的 Dynamic QR。开发时请使用 Sandbox 环境，生产环境切换到 Production。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')
-        );
-        $form->addInput($paypayEnvironment);
-
-        $form->addInput(new Text('paypayApiKey', null, '', _t('PayPay API Key'), _t('通过 PayPay 官方加盟店/开发者流程开通 OPA 权限后获取。格式类似：<code>xxxxxxxxxxxx</code>')));
-        $form->addInput(new Password('paypayApiSecret', null, '', _t('PayPay API Secret'), _t('通过 PayPay 官方加盟店/开发者流程获取，用于请求签名。<strong>请妥善保管，不要泄露。</strong>')));
-        $form->addInput(new Text('paypayMerchantId', null, '', _t('PayPay Merchant ID'), _t('PayPay 商户 ID，格式类似：<code>70xxxx</code>。PayPay 仅支持 JPY（日元）。')));
 
         // ============================================================
         // 微信支付配置
@@ -315,7 +284,12 @@ class Plugin implements PluginInterface
                 .typechopay-editor-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
                 .typechopay-editor-meta{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px}
                 .typechopay-editor-meta span{display:inline-flex;gap:5px;align-items:center;padding:4px 9px;border-radius:4px;background:#f3f4f6;color:#374151}
-                .typechopay-editor-cardbox{margin-top:16px;padding:14px;border:1px solid #e5e7eb;background:#fbfcfe}
+                .typechopay-editor-cardbox{margin-top:16px;border:1px solid #e5e7eb;background:#fff}
+                .typechopay-card-tabs__nav{display:flex;gap:0;border-bottom:1px solid #e5e7eb;background:#f9fafb}
+                .typechopay-card-tabs__tab{appearance:none;border:0;border-right:1px solid #e5e7eb;background:transparent;padding:12px 18px;color:#374151;cursor:pointer;font-weight:600}
+                .typechopay-card-tabs__tab.is-active{background:#fff;color:#111827;box-shadow:inset 0 -2px 0 #ff8a3d}
+                .typechopay-card-tabs__pane{display:none;padding:14px}
+                .typechopay-card-tabs__pane.is-active{display:block}
                 .typechopay-editor-stats{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
                 .typechopay-editor-stat{display:inline-flex;gap:5px;align-items:center;padding:4px 9px;border-radius:4px;background:#eef2ff;color:#374151;font-weight:600}
                 .typechopay-editor-stat--ok{background:#e0f2fe;color:#0369a1}
@@ -347,8 +321,8 @@ class Plugin implements PluginInterface
                 </div>
                 <div class="typechopay-editor-grid">
                     <p>
-                        <label><?php _e('价格'); ?></label>
-                        <input type="number" name="typechopay_amount" min="1" value="<?php echo $amount > 0 ? $amount : ''; ?>" placeholder="<?php _e('单位：分'); ?>" class="w-100">
+                        <label><?php _e('价格（元）'); ?></label>
+                        <input type="number" name="typechopay_amount" min="0.01" step="0.01" value="<?php echo $amount > 0 ? htmlspecialchars(Support\Money::formatCnyInput((int) $amount)) : ''; ?>" placeholder="<?php _e('最低 0.01'); ?>" class="w-100">
                     </p>
                     <p>
                         <label><?php _e('购买权限'); ?></label>
@@ -379,53 +353,60 @@ class Plugin implements PluginInterface
                     <small class="typechopay-editor-muted"><?php _e('类似附件“插入到正文”。不插入时，仅保存商品绑定；前台显示取决于自动插入设置或主题 helper。'); ?></small>
                 </div>
 
-                <div class="typechopay-editor-cardbox">
-                    <strong><?php _e('卡密管理'); ?></strong>
-                    <?php if ($cardStats): ?>
-                        <div class="typechopay-editor-stats">
-                            <span class="typechopay-editor-stat"><?php _e('全部'); ?> <?php echo (int) $cardStats['total']; ?></span>
-                            <span class="typechopay-editor-stat typechopay-editor-stat--ok"><?php _e('库存'); ?> <?php echo (int) $cardStats['available']; ?></span>
-                            <span class="typechopay-editor-stat typechopay-editor-stat--sold"><?php _e('已售'); ?> <?php echo (int) $cardStats['delivered']; ?></span>
-                            <?php if ((int) $cardStats['reserved'] > 0): ?><span class="typechopay-editor-stat"><?php _e('占用'); ?> <?php echo (int) $cardStats['reserved']; ?></span><?php endif; ?>
-                        </div>
-                    <?php else: ?>
-                        <p class="typechopay-editor-muted"><?php _e('选择“卡密管理”并保存文章后，会自动创建绑定商品。之后可以直接在这里粘贴少量卡密。批量导入请到商品管理或卡密库存页。'); ?></p>
-                    <?php endif; ?>
-
-                    <div class="typechopay-editor-import">
-                        <p>
-                            <label><?php _e('添加卡密'); ?></label>
-                            <input type="text" name="typechopay_card_batch_name" value="" placeholder="<?php _e('批次名称，可留空'); ?>" style="width:220px;margin-left:8px;">
-                        </p>
-                        <textarea name="typechopay_card_lines" placeholder="<?php _e('一行一张卡密。支持：卡号----卡密、卡号|卡密、Tab 分隔或单独兑换码。粘贴后保存文章即可导入。'); ?>"></textarea>
+                <div class="typechopay-editor-cardbox" data-typechopay-card-tabs>
+                    <div class="typechopay-card-tabs__nav">
+                        <button type="button" class="typechopay-card-tabs__tab is-active" data-typechopay-card-tab="list"><?php _e('卡密列表'); ?></button>
+                        <button type="button" class="typechopay-card-tabs__tab" data-typechopay-card-tab="import"><?php _e('添加卡密'); ?></button>
                     </div>
 
-                    <?php if ($recentCards): ?>
-                        <table class="typechopay-editor-cards">
-                            <thead><tr><th><?php _e('最近卡密'); ?></th><th><?php _e('状态'); ?></th><th><?php _e('创建时间'); ?></th></tr></thead>
-                            <tbody>
-                            <?php foreach ($recentCards as $card): ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars((string) ($card['code_mask'] ?? '')); ?></td>
-                                    <td><?php echo htmlspecialchars((string) ($card['status'] ?? '')); ?></td>
-                                    <td><?php echo htmlspecialchars((string) ($card['created_at'] ?? '')); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    <?php endif; ?>
-
-                    <div class="typechopay-editor-actions">
-                        <?php if ($product): ?>
-                            <a class="btn btn-xs" href="<?php echo htmlspecialchars($productsUrl); ?>"><?php _e('高级设置'); ?></a>
-                            <?php if ($previewUrl !== ''): ?>
-                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($previewUrl); ?>" target="_blank" rel="noopener noreferrer"><?php _e('查看前台效果'); ?></a>
-                            <?php endif; ?>
-                            <?php if ($hasCardcode): ?>
-                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($inventoryUrl); ?>"><?php _e('完整库存'); ?></a>
-                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($salesUrl); ?>"><?php _e('销售记录'); ?></a>
-                            <?php endif; ?>
+                    <div class="typechopay-card-tabs__pane is-active" data-typechopay-card-pane="list">
+                        <?php if ($cardStats): ?>
+                            <div class="typechopay-editor-stats">
+                                <span class="typechopay-editor-stat"><?php _e('全部'); ?> <?php echo (int) $cardStats['total']; ?></span>
+                                <span class="typechopay-editor-stat typechopay-editor-stat--ok"><?php _e('库存'); ?> <?php echo (int) $cardStats['available']; ?></span>
+                                <span class="typechopay-editor-stat typechopay-editor-stat--sold"><?php _e('已售'); ?> <?php echo (int) $cardStats['delivered']; ?></span>
+                                <?php if ((int) $cardStats['reserved'] > 0): ?><span class="typechopay-editor-stat"><?php _e('占用'); ?> <?php echo (int) $cardStats['reserved']; ?></span><?php endif; ?>
+                            </div>
+                        <?php else: ?>
+                            <p class="typechopay-editor-muted"><?php _e('保存文章后会自动创建绑定商品，并在这里显示库存。'); ?></p>
                         <?php endif; ?>
+
+                        <?php if ($recentCards): ?>
+                            <table class="typechopay-editor-cards">
+                                <thead><tr><th><?php _e('卡密'); ?></th><th><?php _e('状态'); ?></th><th><?php _e('创建时间'); ?></th></tr></thead>
+                                <tbody>
+                                <?php foreach ($recentCards as $card): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars((string) ($card['code_mask'] ?? '')); ?></td>
+                                        <td><?php echo htmlspecialchars((string) ($card['status'] ?? '')); ?></td>
+                                        <td><?php echo htmlspecialchars((string) ($card['created_at'] ?? '')); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
+
+                        <div class="typechopay-editor-actions">
+                            <?php if ($product): ?>
+                                <?php if ($hasCardcode): ?>
+                                    <a class="btn btn-xs" href="<?php echo htmlspecialchars($inventoryUrl); ?>"><?php _e('完整库存'); ?></a>
+                                    <a class="btn btn-xs" href="<?php echo htmlspecialchars($salesUrl); ?>"><?php _e('销售记录'); ?></a>
+                                <?php endif; ?>
+                                <a class="btn btn-xs" href="<?php echo htmlspecialchars($productsUrl); ?>"><?php _e('高级设置'); ?></a>
+                                <?php if ($previewUrl !== ''): ?>
+                                    <a class="btn btn-xs" href="<?php echo htmlspecialchars($previewUrl); ?>" target="_blank" rel="noopener noreferrer"><?php _e('查看前台'); ?></a>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="typechopay-card-tabs__pane typechopay-editor-import" data-typechopay-card-pane="import">
+                        <p class="typechopay-editor-muted"><?php _e('一行一张卡密，粘贴后保存文章即可导入。'); ?></p>
+                        <p>
+                            <label><?php _e('批次名称'); ?></label>
+                            <input type="text" name="typechopay_card_batch_name" value="" placeholder="<?php _e('可留空'); ?>" style="width:220px;margin-left:8px;">
+                        </p>
+                        <textarea name="typechopay_card_lines" placeholder="<?php _e('支持：卡号----卡密、卡号|卡密、Tab 分隔或单独兑换码。'); ?>"></textarea>
                     </div>
                 </div>
             </div>
@@ -457,6 +438,26 @@ class Plugin implements PluginInterface
                     textarea.dispatchEvent(new Event('input', {bubbles: true}));
                 });
             }());
+            (function () {
+                var roots = document.querySelectorAll('[data-typechopay-card-tabs]');
+                for (var i = 0; i < roots.length; i++) {
+                    roots[i].addEventListener('click', function (event) {
+                        var tab = event.target.closest('[data-typechopay-card-tab]');
+                        if (!tab || !this.contains(tab)) {
+                            return;
+                        }
+                        var name = tab.getAttribute('data-typechopay-card-tab');
+                        var tabs = this.querySelectorAll('[data-typechopay-card-tab]');
+                        var panes = this.querySelectorAll('[data-typechopay-card-pane]');
+                        for (var t = 0; t < tabs.length; t++) {
+                            tabs[t].classList.toggle('is-active', tabs[t] === tab);
+                        }
+                        for (var p = 0; p < panes.length; p++) {
+                            panes[p].classList.toggle('is-active', panes[p].getAttribute('data-typechopay-card-pane') === name);
+                        }
+                    });
+                }
+            }());
             </script>
         </section>
         <?php
@@ -474,7 +475,7 @@ class Plugin implements PluginInterface
         }
 
         try {
-            Support\Money::assertAmount($widget->request->get('typechopay_amount'));
+            Support\Money::assertCnyYuanAmount($widget->request->get('typechopay_amount'));
         } catch (\Throwable $e) {
             return $contents;
         }
@@ -558,7 +559,7 @@ class Plugin implements PluginInterface
 
             try {
                 $product = $productService->resolve($attrs, [
-                    'currency' => $config['defaultCurrency'] ?: 'JPY',
+                    'currency' => $config['defaultCurrency'] ?: 'CNY',
                     'subject' => $archive->title ?? 'TypechoPay Order',
                     'biz_type' => $bizType,
                     'biz_id' => $bizId,
@@ -687,19 +688,19 @@ class Plugin implements PluginInterface
     public static function pluginConfig(Options $options): array
     {
         $plugin = $options->plugin('TypechoPay');
+        $enabledGateways = self::normalizeGateways($plugin->enabledGateways ?? ['alipay']);
+        if (!$enabledGateways) {
+            $enabledGateways = ['alipay'];
+        }
 
         return [
-            'enabledGateways' => self::normalizeGateways($plugin->enabledGateways ?? ['paypay']),
-            'defaultCurrency' => strtoupper((string) ($plugin->defaultCurrency ?? 'JPY')),
+            'enabledGateways' => $enabledGateways,
+            'defaultCurrency' => 'CNY',
             'endpointSecret' => (string) ($plugin->endpointSecret ?? ''),
             'productAutoInjectPosition' => self::normalizeAutoInjectPosition(
                 (string) ($plugin->productAutoInjectPosition ?? 'off')
             ),
             'loadFrontendCss' => (string) ($plugin->loadFrontendCss ?? '1') !== '0',
-            'paypayEnvironment' => (string) ($plugin->paypayEnvironment ?? 'sandbox'),
-            'paypayApiKey' => (string) ($plugin->paypayApiKey ?? ''),
-            'paypayApiSecret' => (string) ($plugin->paypayApiSecret ?? ''),
-            'paypayMerchantId' => (string) ($plugin->paypayMerchantId ?? ''),
             'wechatAppId' => (string) ($plugin->wechatAppId ?? ''),
             'wechatMchId' => (string) ($plugin->wechatMchId ?? ''),
             'wechatMerchantSerial' => (string) ($plugin->wechatMerchantSerial ?? ''),
@@ -1426,7 +1427,7 @@ class Plugin implements PluginInterface
         }
 
         $action = Common::url('/action/' . self::ACTION . '?do=prepare', $options->index);
-        $labels = ['paypay' => 'PayPay', 'wechat' => '微信支付', 'alipay' => '支付宝'];
+        $labels = ['wechat' => '微信支付', 'alipay' => '支付宝'];
         $buttons = [];
         foreach ($state['gateways'] as $gateway) {
             $payload = [
@@ -1513,8 +1514,8 @@ class Plugin implements PluginInterface
             throw new \InvalidArgumentException('商品标识已存在，请换一个标识。');
         }
 
-        $amount = Support\Money::assertAmount($widget->request->get('typechopay_amount'));
-        $currency = Support\Money::assertCurrency($widget->request->get('typechopay_currency') ?: 'CNY');
+        $amount = Support\Money::assertCnyYuanAmount($widget->request->get('typechopay_amount'));
+        $currency = 'CNY';
         $policy = strtolower(trim((string) $widget->request->get('typechopay_purchase_policy'))) ?: 'repeatable';
         if (!in_array($policy, ['once', 'repeatable', 'limited'], true)) {
             throw new \InvalidArgumentException('购买策略无效。');
@@ -1826,7 +1827,6 @@ class Plugin implements PluginInterface
     {
         $action = Common::url('/action/' . self::ACTION . '?do=prepare', $options->index);
         $labels = [
-            'paypay' => 'PayPay',
             'wechat' => '微信支付',
             'alipay' => '支付宝',
         ];
@@ -1944,7 +1944,7 @@ class Plugin implements PluginInterface
         $normalized = [];
         foreach ($items as $item) {
             $gateway = strtolower(trim((string) $item));
-            if (in_array($gateway, ['paypay', 'wechat', 'alipay'], true)) {
+            if (in_array($gateway, ['wechat', 'alipay'], true)) {
                 $normalized[] = $gateway;
             }
         }
@@ -1954,10 +1954,6 @@ class Plugin implements PluginInterface
 
     private static function gatewaySupportsCurrency(string $gateway, string $currency): bool
     {
-        if ($gateway === 'paypay') {
-            return $currency === 'JPY';
-        }
-
         if (in_array($gateway, ['wechat', 'alipay'], true)) {
             return $currency === 'CNY';
         }

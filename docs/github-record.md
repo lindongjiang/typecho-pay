@@ -2,6 +2,30 @@
 
 Date: 2026-06-25
 
+## 2026-06-27 Admin Simplification and CNY Flow (v0.4.8)
+
+### Change
+
+Simplified the operator-facing payment flow around article products and card-code delivery.
+
+### Scope
+
+- Changed article editor and product admin amount inputs from fen integers to yuan decimal inputs, with 0.01 as the minimum accepted value.
+- Kept database and gateway amounts in fen through `Money::assertCnyYuanAmount()`.
+- Reworked the article editor card-code area into two tabs: `卡密列表` and `添加卡密`.
+- Removed PayPay/JPY from plugin config, settings help, README examples, frontend gateway normalization, and create/notify gateway filtering.
+- Kept historical gateway files and tests in place for now; this change only removes them from the current product surface.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-27 Alipay SDK Loader Fix (v0.4.7)
 
 ### Change

@@ -8,11 +8,11 @@ use TypechoPlugin\TypechoPay\Support\Signer;
 
 $payload = [
     'amount' => '500',
-    'currency' => 'JPY',
+    'currency' => 'CNY',
     'subject' => 'AppFlex 30 day',
     'biz_type' => 'post',
     'biz_id' => '100',
-    'gateway' => 'paypay',
+    'gateway' => 'alipay',
     'return_to' => 'https://example.com/post/100.html',
     'ts' => '1780000000',
     'nonce' => '1234567890abcdef',

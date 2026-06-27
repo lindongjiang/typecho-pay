@@ -207,7 +207,7 @@ class Action extends BaseOptions implements ActionInterface
     {
         $config = Plugin::pluginConfig($this->options);
         $gateway = strtolower((string) $this->request->get('gateway'));
-        if (!in_array($gateway, ['paypay', 'wechat', 'alipay'], true)) {
+        if (!in_array($gateway, ['wechat', 'alipay'], true)) {
             $this->providerResponse($gateway, false);
             return;
         }
@@ -561,8 +561,7 @@ class Action extends BaseOptions implements ActionInterface
 
     private function assertGatewayCurrency(string $gateway, string $currency): void
     {
-        $expected = $gateway === 'paypay' ? 'JPY' : 'CNY';
-        if ($currency !== $expected) {
+        if ($currency !== 'CNY') {
             throw new \InvalidArgumentException('Currency does not match payment gateway.');
         }
     }

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.8 - 2026-06-27
+
+### Admin simplification
+
+- Simplified the article editor card-code panel into two tabs: card list and card import.
+- Changed article and product admin price inputs to CNY yuan with a 0.01 minimum while keeping stored amounts in fen.
+- Removed PayPay/JPY from the operator-facing plugin config, settings help, README examples, and payment gateway filtering.
+
 ## 0.4.7 - 2026-06-27
 
 ### Alipay runtime
