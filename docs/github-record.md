@@ -2,6 +2,35 @@
 
 Date: 2026-06-25
 
+## 2026-06-27 Article Product Display and Typecho Category Alignment (v0.4.3)
+
+### Change
+
+Aligned the product display path with the article-as-product model: Typecho article categories remain the frontend primary taxonomy, while TypechoPay categories are now presented as optional shop topics.
+
+### Scope
+
+- Changed auto-injection detection so `[typechopay_content]` protected blocks do not suppress the bound article product panel.
+- Added Typecho native category filters to `[typechopay_shop]`: `mid`, `typecho_mid`, `typecho_category`, `category_slug`, and `typecho_category_slug`.
+- Product cards fall back to the bound article's Typecho category labels when no TypechoPay shop topic is assigned.
+- Added `Plugin::renderPostBadge($archive)` for theme article-list badges and `typechopay/post-badge.php` theme override support.
+- Product management now displays bound article title, edit link, and Typecho article categories for `content_id` bindings.
+- Renamed the product-category UI copy to **商城专题** to avoid confusing it with Typecho native article categories.
+
+### Boundary
+
+This change does not automatically patch arbitrary theme list templates. Themes can call `Plugin::renderPostBadge($this)` where they want the article card badge to appear, or override `typechopay/post-badge.php`.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-26 Simplified Article Card-Code Management (v0.4.2)
 
 ### Change

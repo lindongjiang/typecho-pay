@@ -126,7 +126,23 @@ TypechoPay
 [typechopay_product]
 ```
 
-也可以在插件设置里开启“文章商品卡自动插入位置”。当文章 `cid` 绑定了上架商品，且正文没有手写 TypechoPay 短代码时，插件会自动在正文顶部、底部或第一段后插入购买模块。
+也可以在插件设置里开启“文章商品卡自动插入位置”。当文章 `cid` 绑定了上架商品时，插件会自动在正文顶部、底部或第一段后插入购买模块。文章中只有 `[typechopay_content]` 付费内容块时不会阻止自动插入；只有手写 `[typechopay]`、`[typechopay_product]` 或 `[typechopay_shop]` 这类购买 UI 短代码时才会跳过自动插入，避免重复显示。
+
+前台主分类建议继续使用 Typecho 原生文章分类。`TypechoPay → 商品管理` 里的“商城专题”只是额外筛选标签，不替代文章分类。商城短代码可以按 Typecho 原生分类筛选：
+
+```text
+[typechopay_shop mid="2"]
+[typechopay_shop typecho_category="应用"]
+[typechopay_shop category_slug="yingyong"]
+```
+
+主题文章列表可调用角标 helper：
+
+```php
+<?php echo \TypechoPlugin\TypechoPay\Plugin::renderPostBadge($this); ?>
+```
+
+需要自定义角标时，可在当前主题中放置 `typechopay/post-badge.php`。
 
 8. 用户点击支付时，系统先从 `available` 库存中条件更新预留一张卡密为 `reserved`，预留 30 分钟。同一买家、同一商品、同一网关的未过期活动订单会被复用，不会重复创建支付平台订单。
 9. 支付成功后，`FulfillmentManager` 把同一张预留卡密标记为 `delivered`。即使卡密交付暂时失败，支付确认和 ACK 仍会成功，不会导致支付平台重复回调。

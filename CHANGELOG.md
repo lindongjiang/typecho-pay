@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.4.3 - 2026-06-27
+
+### Article products
+
+- Fixed article product auto-injection so `[typechopay_content]` protected blocks no longer prevent the bound product panel from rendering.
+- Added Typecho native category filters for `[typechopay_shop]` through `mid`, `typecho_mid`, `typecho_category`, `category_slug`, and `typecho_category_slug`.
+- Added `Plugin::renderPostBadge($archive)` for theme article-list badges, with `typechopay/post-badge.php` override support.
+- Product cards now fall back to the bound article's Typecho categories when no TypechoPay 商城专题 is set.
+
+### Admin
+
+- Renamed the product category UI to 商城专题 to avoid confusing it with Typecho native article categories.
+- Product management now shows the bound article title, edit link, and Typecho article categories for products with `content_id`.
+
 ## 0.4.2 - 2026-06-26
 
 ### Article editor

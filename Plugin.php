@@ -54,7 +54,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.2
+ * @version 0.4.3
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -164,7 +164,7 @@ class Plugin implements PluginInterface
             ],
             'off',
             _t('文章商品卡自动插入位置'),
-            _t('当文章 cid 绑定了上架商品，且正文没有手写 TypechoPay 短代码时，自动显示商品购买模块。为避免影响主题排版，默认关闭。')
+            _t('文章 cid 绑定了上架商品时，自动在详情页显示购买模块。若文章只包含 [typechopay_content]，仍会自动插入；只有 [typechopay]、[typechopay_product]、[typechopay_shop] 会阻止重复插入。若文章页不显示卡密商品，请先确认这里不是“不自动插入”。')
         );
         $form->addInput($productAutoInjectPosition);
 
@@ -259,7 +259,7 @@ class Plugin implements PluginInterface
         $summary = $product ? (string) ($product['summary'] ?? '') : '';
         $coverUrl = $product ? (string) ($product['cover_url'] ?? '') : '';
         $productKey = $product ? (string) ($product['product_key'] ?? '') : '';
-        $containsShortcode = is_string($content->text ?? null) && self::containsTypechoPayShortcode((string) $content->text);
+        $containsShortcode = is_string($content->text ?? null) && self::containsExplicitProductUiShortcode((string) $content->text);
         $shouldInsert = !$containsShortcode && $mode !== 'off';
         $cardStats = ($productId > 0 && $hasCardcode) ? self::articleCardStats($productId) : null;
         $recentCards = ($productId > 0 && $hasCardcode) ? self::recentArticleCards($productId, 8) : [];
@@ -338,7 +338,7 @@ class Plugin implements PluginInterface
                 <div class="typechopay-editor-row">
                     <label><input type="checkbox" name="typechopay_unlock_article" value="1" <?php if ($hasPostAccess || $mode === 'post_access') echo 'checked'; ?>> <?php _e('购买后解锁本文'); ?></label>
                     <label><input type="checkbox" name="typechopay_insert_shortcode" value="1" <?php if ($shouldInsert) echo 'checked'; ?>> <?php _e('在正文显示购买模块'); ?></label>
-                    <?php if ($containsShortcode): ?><small class="typechopay-editor-muted"><?php _e('正文已包含 TypechoPay 短代码，不会重复插入。'); ?></small><?php endif; ?>
+                    <?php if ($containsShortcode): ?><small class="typechopay-editor-muted"><?php _e('正文已包含 TypechoPay 购买短代码，不会重复插入。'); ?></small><?php endif; ?>
                 </div>
 
                 <div class="typechopay-editor-cardbox">
@@ -410,7 +410,7 @@ class Plugin implements PluginInterface
         }
 
         $text = (string) ($contents['text'] ?? '');
-        if ($text === '' || self::containsTypechoPayShortcode($text)) {
+        if ($text === '' || self::containsExplicitProductUiShortcode($text)) {
             return $contents;
         }
 
@@ -461,12 +461,11 @@ class Plugin implements PluginInterface
             return $content;
         }
 
-        $hasTypechoPayShortcode = self::containsTypechoPayShortcode($content);
-        if (!$hasTypechoPayShortcode) {
-            return self::autoInjectProductPanel($content, $archive);
-        }
-
+        $hasExplicitProductUi = self::containsExplicitProductUiShortcode($content);
         $content = self::renderProtectedContent($content, $archive);
+        if (!$hasExplicitProductUi) {
+            $content = self::autoInjectProductPanel($content, $archive);
+        }
 
         // Render [typechopay_shop ...] — product listing page.
         $content = preg_replace_callback('/\[typechopay_shop(?:\s+([^\]]*))?\]/i', function ($matches) {
@@ -521,6 +520,56 @@ class Plugin implements PluginInterface
 
             return self::renderPayBox($product, $entryPayload, $gateways, $options, $config);
         }, $content);
+    }
+
+    /**
+     * Render a small badge for theme article-list templates.
+     *
+     * Theme usage: echo \TypechoPlugin\TypechoPay\Plugin::renderPostBadge($this);
+     *
+     * @param object|null $archive
+     */
+    public static function renderPostBadge($archive = null): string
+    {
+        if (!is_object($archive)) {
+            return '';
+        }
+
+        $cid = self::archiveContentId($archive);
+        if ($cid <= 0) {
+            return '';
+        }
+
+        $product = self::findActiveProductByContentId($cid);
+        if (!$product) {
+            return '';
+        }
+
+        self::enqueueShopCss();
+        $options = Options::alloc();
+        $config = self::pluginConfig($options);
+        $stats = self::productDisplayStats($product);
+        $state = self::productDisplayState($product, $stats, $config);
+        $templateData = [
+            'product' => $product,
+            'archive' => $archive,
+            'stats' => $stats,
+            'state' => $state,
+        ];
+        $themed = self::renderThemeTemplate('post-badge', $templateData);
+        if ($themed !== null) {
+            return $themed;
+        }
+
+        $typeLabel = ((string) ($product['stock_policy'] ?? 'none') === 'reserve_on_order') ? _t('自动售卡') : _t('付费内容');
+        $price = Support\Money::formatForDisplay((int) $product['amount'], (string) ($product['currency'] ?? 'CNY'));
+        $stock = (string) ($stats['stock_text'] ?? '');
+
+        return '<span class="typechopay-post-badge typechopay-status--' . htmlspecialchars((string) $state['status']) . '">'
+            . '<span class="typechopay-post-badge__label">' . htmlspecialchars($typeLabel) . '</span>'
+            . '<strong class="typechopay-post-badge__price">' . htmlspecialchars($price) . '</strong>'
+            . ($stock !== '' ? '<span class="typechopay-post-badge__stock">' . htmlspecialchars($stock) . '</span>' : '')
+            . '</span>';
     }
 
     /**
@@ -579,6 +628,7 @@ class Plugin implements PluginInterface
         $columns = max(1, min(6, (int) ($attrs['columns'] ?? 3)));
         $limit = max(1, min(100, (int) ($attrs['limit'] ?? 20)));
         $featured = (string) ($attrs['featured'] ?? '') === '1';
+        $typechoCategoryContentIds = self::typechoCategoryContentIdsFromShopAttrs($attrs);
 
         $select = $db->select()->from('table.pay_products')
             ->where('status = ?', 'active')
@@ -596,12 +646,19 @@ class Plugin implements PluginInterface
             if ($cat) {
                 $select->where('category_id = ?', (int) $cat['id']);
             } else {
-                return '<div class="typechopay-shop"><p class="typechopay-shop__empty">' . htmlspecialchars(_t('分类不存在')) . '</p></div>';
+                return '<div class="typechopay-shop"><p class="typechopay-shop__empty">' . htmlspecialchars(_t('商城专题不存在')) . '</p></div>';
             }
         }
 
         if ($featured) {
             $select->where('is_featured = ?', 1);
+        }
+
+        if ($typechoCategoryContentIds !== null) {
+            if (!$typechoCategoryContentIds) {
+                return '<div class="typechopay-shop"><p class="typechopay-shop__empty">' . htmlspecialchars(_t('暂无商品')) . '</p></div>';
+            }
+            $select->where('content_id IN ?', $typechoCategoryContentIds);
         }
 
         $products = $db->fetchAll($select);
@@ -615,9 +672,10 @@ class Plugin implements PluginInterface
         foreach ($allCats as $c) {
             $categories[(int) $c['id']] = $c;
         }
+        $typechoCategories = self::typechoCategoryLabelsForProducts($products);
 
         // Try theme template first.
-        $templateData = compact('products', 'categories', 'columns', 'categorySlug', 'attrs');
+        $templateData = compact('products', 'categories', 'typechoCategories', 'columns', 'categorySlug', 'attrs');
         $themed = self::renderThemeTemplate('shop', $templateData);
         if ($themed !== null) {
             return $themed;
@@ -631,7 +689,7 @@ class Plugin implements PluginInterface
         $config = self::pluginConfig($options);
 
         foreach ($products as $product) {
-            $html .= self::renderProductCardHtml($product, $categories, $options, $config);
+            $html .= self::renderProductCardHtml($product, $categories, $options, $config, $typechoCategories);
         }
 
         $html .= '</div></div>';
@@ -665,6 +723,7 @@ class Plugin implements PluginInterface
         }
 
         $categories = self::activeProductCategories();
+        $typechoCategories = self::typechoCategoryLabelsForProducts([$product]);
         $options = Options::alloc();
         $config = self::pluginConfig($options);
         $stats = self::productDisplayStats($product);
@@ -674,6 +733,7 @@ class Plugin implements PluginInterface
         $templateData = [
             'product' => $product,
             'categories' => $categories,
+            'typechoCategories' => $typechoCategories,
             'attrs' => $attrs,
             'stats' => $stats,
             'state' => $state,
@@ -684,7 +744,7 @@ class Plugin implements PluginInterface
         }
 
         return '<div class="typechopay-shop">'
-            . self::renderProductCardHtml($product, $categories, $options, $config)
+            . self::renderProductCardHtml($product, $categories, $options, $config, $typechoCategories)
             . '</div>';
     }
 
@@ -800,7 +860,7 @@ class Plugin implements PluginInterface
     /**
      * Render a single product card HTML.
      */
-    private static function renderProductCardHtml(array $product, array $categories, Options $options, array $config): string
+    private static function renderProductCardHtml(array $product, array $categories, Options $options, array $config, array $typechoCategories = []): string
     {
         $pid = (int) $product['id'];
         $currency = (string) ($product['currency'] ?? 'CNY');
@@ -808,6 +868,9 @@ class Plugin implements PluginInterface
         $catName = '';
         if (!empty($product['category_id']) && isset($categories[(int) $product['category_id']])) {
             $catName = (string) $categories[(int) $product['category_id']]['name'];
+        }
+        if ($catName === '' && !empty($product['content_id']) && isset($typechoCategories[(int) $product['content_id']])) {
+            $catName = (string) $typechoCategories[(int) $product['content_id']];
         }
 
         $stats = self::productDisplayStats($product);
@@ -850,9 +913,9 @@ class Plugin implements PluginInterface
             . '</article>';
     }
 
-    private static function containsTypechoPayShortcode(string $content): bool
+    private static function containsExplicitProductUiShortcode(string $content): bool
     {
-        return stripos($content, '[typechopay') !== false;
+        return preg_match('/\[(typechopay|typechopay_product|typechopay_shop)(\s|\])/i', $content) === 1;
     }
 
     private static function normalizeAutoInjectPosition(string $position): string
@@ -914,6 +977,113 @@ class Plugin implements PluginInterface
         }
 
         return $categories;
+    }
+
+    private static function typechoCategoryContentIdsFromShopAttrs(array $attrs): ?array
+    {
+        $midRaw = trim((string) ($attrs['mid'] ?? ($attrs['typecho_mid'] ?? '')));
+        $slug = trim((string) ($attrs['category_slug'] ?? ($attrs['typecho_category_slug'] ?? '')));
+        $name = trim((string) ($attrs['typecho_category'] ?? ''));
+        if ($midRaw === '' && $slug === '' && $name === '') {
+            return null;
+        }
+
+        $mid = $midRaw !== '' ? filter_var($midRaw, FILTER_VALIDATE_INT) : false;
+        $mid = $mid !== false && (int) $mid > 0 ? (int) $mid : self::typechoCategoryMid($slug, $name);
+        if ($mid <= 0) {
+            return [];
+        }
+
+        $rows = Db::get()->fetchAll(
+            Db::get()->select('cid')->from('table.relationships')->where('mid = ?', $mid)
+        );
+        $contentIds = [];
+        foreach ($rows as $row) {
+            $cid = (int) ($row['cid'] ?? 0);
+            if ($cid > 0) {
+                $contentIds[$cid] = $cid;
+            }
+        }
+
+        return array_values($contentIds);
+    }
+
+    private static function typechoCategoryMid(string $slug, string $name): int
+    {
+        $select = Db::get()->select('mid')->from('table.metas')
+            ->where('type = ?', 'category')
+            ->limit(1);
+        if ($slug !== '') {
+            $select->where('slug = ?', $slug);
+        } elseif ($name !== '') {
+            $select->where('name = ?', $name);
+        } else {
+            return 0;
+        }
+
+        $row = Db::get()->fetchRow($select);
+        return $row ? (int) ($row['mid'] ?? 0) : 0;
+    }
+
+    private static function typechoCategoryLabelsForProducts(array $products): array
+    {
+        $contentIds = [];
+        foreach ($products as $product) {
+            $contentId = (int) ($product['content_id'] ?? 0);
+            if ($contentId > 0) {
+                $contentIds[$contentId] = $contentId;
+            }
+        }
+        if (!$contentIds) {
+            return [];
+        }
+
+        $relationships = Db::get()->fetchAll(
+            Db::get()->select('cid', 'mid')->from('table.relationships')
+                ->where('cid IN ?', array_values($contentIds))
+        );
+        if (!$relationships) {
+            return [];
+        }
+
+        $mids = [];
+        $cidToMids = [];
+        foreach ($relationships as $relationship) {
+            $cid = (int) ($relationship['cid'] ?? 0);
+            $mid = (int) ($relationship['mid'] ?? 0);
+            if ($cid > 0 && $mid > 0) {
+                $cidToMids[$cid][] = $mid;
+                $mids[$mid] = $mid;
+            }
+        }
+        if (!$mids) {
+            return [];
+        }
+
+        $metas = Db::get()->fetchAll(
+            Db::get()->select('mid', 'name')->from('table.metas')
+                ->where('type = ?', 'category')
+                ->where('mid IN ?', array_values($mids))
+        );
+        $namesByMid = [];
+        foreach ($metas as $meta) {
+            $namesByMid[(int) $meta['mid']] = (string) $meta['name'];
+        }
+
+        $labels = [];
+        foreach ($cidToMids as $cid => $categoryMids) {
+            $names = [];
+            foreach ($categoryMids as $mid) {
+                if (isset($namesByMid[$mid])) {
+                    $names[] = $namesByMid[$mid];
+                }
+            }
+            if ($names) {
+                $labels[(int) $cid] = implode(', ', array_values(array_unique($names)));
+            }
+        }
+
+        return $labels;
     }
 
     private static function productDisplayStats(array $product): array

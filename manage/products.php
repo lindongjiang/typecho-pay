@@ -79,11 +79,11 @@ if ($request->isPost()) {
             $sortOrder = filter_var($request->get('cat_sort_order'), FILTER_VALIDATE_INT) ?: 0;
 
             if ($slug === '' || !preg_match('/^[a-zA-Z0-9_-]{1,128}$/', $slug)) {
-                throw new InvalidArgumentException('分类标识只允许字母、数字、横线和下划线。');
+                throw new InvalidArgumentException('商城专题标识只允许字母、数字、横线和下划线。');
             }
             $nameLen = function_exists('mb_strlen') ? mb_strlen($name) : strlen($name);
             if ($name === '' || $nameLen > 255) {
-                throw new InvalidArgumentException('请填写 1-255 字的分类名称。');
+                throw new InvalidArgumentException('请填写 1-255 字的商城专题名称。');
             }
 
             $now = date('Y-m-d H:i:s');
@@ -97,15 +97,15 @@ if ($request->isPost()) {
                 'updated_at' => $now,
             ]));
 
-            Notice::alloc()->set(_t('分类 "%s" 已创建。', $name), 'success');
+            Notice::alloc()->set(_t('商城专题 "%s" 已创建。', $name), 'success');
         } elseif ($action === 'edit_category') {
             $catId = filter_var($request->get('cat_id'), FILTER_VALIDATE_INT);
             if ($catId === false || (int) $catId <= 0) {
-                throw new InvalidArgumentException('无效分类 ID。');
+                throw new InvalidArgumentException('无效商城专题 ID。');
             }
             $cat = $db->fetchRow($db->select()->from('table.pay_product_categories')->where('id = ?', (int) $catId)->limit(1));
             if (!$cat) {
-                throw new InvalidArgumentException('分类不存在。');
+                throw new InvalidArgumentException('商城专题不存在。');
             }
 
             $name = trim((string) $request->get('cat_name'));
@@ -115,7 +115,7 @@ if ($request->isPost()) {
 
             $nameLen = function_exists('mb_strlen') ? mb_strlen($name) : strlen($name);
             if ($name === '' || $nameLen > 255) {
-                throw new InvalidArgumentException('请填写 1-255 字的分类名称。');
+                throw new InvalidArgumentException('请填写 1-255 字的商城专题名称。');
             }
 
             $db->query($db->update('table.pay_product_categories')->rows([
@@ -126,18 +126,18 @@ if ($request->isPost()) {
                 'updated_at' => date('Y-m-d H:i:s'),
             ])->where('id = ?', (int) $catId));
 
-            Notice::alloc()->set(_t('分类已更新。'), 'success');
+            Notice::alloc()->set(_t('商城专题已更新。'), 'success');
         } elseif ($action === 'delete_category') {
             $catId = filter_var($request->get('cat_id'), FILTER_VALIDATE_INT);
             if ($catId === false || (int) $catId <= 0) {
-                throw new InvalidArgumentException('无效分类 ID。');
+                throw new InvalidArgumentException('无效商城专题 ID。');
             }
             $db->query($db->update('table.pay_products')->rows([
                 'category_id' => null,
                 'updated_at' => date('Y-m-d H:i:s'),
             ])->where('category_id = ?', (int) $catId));
             $db->query($db->delete('table.pay_product_categories')->where('id = ?', (int) $catId));
-            Notice::alloc()->set(_t('分类已删除，关联商品已取消分类。'), 'success');
+            Notice::alloc()->set(_t('商城专题已删除，关联商品已取消专题。'), 'success');
         } elseif ($action === 'edit_product') {
             $productId = filter_var($request->get('product_id'), FILTER_VALIDATE_INT);
             if ($productId === false || (int) $productId <= 0) {
@@ -538,6 +538,62 @@ if ($products) {
     }
 }
 
+$boundContents = [];
+$boundContentCategories = [];
+$boundContentIds = [];
+foreach ($products as $product) {
+    $contentId = (int) ($product['content_id'] ?? 0);
+    if ($contentId > 0) {
+        $boundContentIds[$contentId] = $contentId;
+    }
+}
+if ($boundContentIds) {
+    $contentRows = $db->fetchAll(
+        $db->select('cid', 'title', 'type', 'status')->from('table.contents')
+            ->where('cid IN ?', array_values($boundContentIds))
+    );
+    foreach ($contentRows as $contentRow) {
+        $boundContents[(int) $contentRow['cid']] = $contentRow;
+    }
+
+    $relationships = $db->fetchAll(
+        $db->select('cid', 'mid')->from('table.relationships')
+            ->where('cid IN ?', array_values($boundContentIds))
+    );
+    $mids = [];
+    $contentToMids = [];
+    foreach ($relationships as $relationship) {
+        $cid = (int) ($relationship['cid'] ?? 0);
+        $mid = (int) ($relationship['mid'] ?? 0);
+        if ($cid > 0 && $mid > 0) {
+            $contentToMids[$cid][] = $mid;
+            $mids[$mid] = $mid;
+        }
+    }
+    if ($mids) {
+        $metas = $db->fetchAll(
+            $db->select('mid', 'name')->from('table.metas')
+                ->where('type = ?', 'category')
+                ->where('mid IN ?', array_values($mids))
+        );
+        $namesByMid = [];
+        foreach ($metas as $meta) {
+            $namesByMid[(int) $meta['mid']] = (string) $meta['name'];
+        }
+        foreach ($contentToMids as $cid => $categoryMids) {
+            $names = [];
+            foreach ($categoryMids as $mid) {
+                if (isset($namesByMid[$mid])) {
+                    $names[] = $namesByMid[$mid];
+                }
+            }
+            if ($names) {
+                $boundContentCategories[(int) $cid] = implode(', ', array_values(array_unique($names)));
+            }
+        }
+    }
+}
+
 // Load product for editing if requested.
 $editProduct = null;
 $editDeliverables = [];
@@ -563,9 +619,9 @@ include 'menu.php';
         <?php include 'page-title.php'; ?>
 
         <div class="typecho-list-operate clearfix">
-            <p>管理商品、分类、卡密库存和销售。
-            商城短代码: <code>[typechopay_shop]</code> <code>[typechopay_product product="标识"]</code> <code>[typechopay_product]</code>
-            绑定文章后可在插件设置中开启自动插入商品卡。
+            <p>管理商品、商城专题、卡密库存和销售。
+            商城短代码: <code>[typechopay_shop]</code> <code>[typechopay_shop mid="2"]</code> <code>[typechopay_shop typecho_category="应用"]</code> <code>[typechopay_product]</code>
+            绑定文章后可在插件设置中开启自动插入商品卡；如果文章页不显示，请检查商品是否绑定当前文章、状态是否上架、自动插入是否关闭，以及正文是否手写了购买短代码。
             &nbsp; <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-inventory.php'); ?>">卡密库存</a>
             &nbsp; <a href="<?php echo htmlspecialchars($options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-sales.php'); ?>">卡密销售</a></p>
         </div>
@@ -574,15 +630,15 @@ include 'menu.php';
         <!-- Category Management -->
         <!-- ============================================================ -->
         <div class="table-description" style="margin-top:20px;">
-            <h3><?php _e('商品分类'); ?></h3>
+            <h3><?php _e('商城专题'); ?></h3>
 
             <?php if ($editCategory): ?>
             <div style="padding:12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;margin-bottom:12px;">
-                <h4><?php _e('编辑分类'); ?>: <?php echo htmlspecialchars($editCategory['slug']); ?></h4>
+                <h4><?php _e('编辑商城专题'); ?>: <?php echo htmlspecialchars($editCategory['slug']); ?></h4>
                 <form method="post" action="<?php echo htmlspecialchars($formAction); ?>">
                     <input type="hidden" name="action" value="edit_category">
                     <input type="hidden" name="cat_id" value="<?php echo (int) $editCategory['id']; ?>">
-                    <p><label><?php _e('分类名称'); ?></label><br><input type="text" name="cat_name" value="<?php echo htmlspecialchars($editCategory['name']); ?>" style="width:260px;" required></p>
+                    <p><label><?php _e('专题名称'); ?></label><br><input type="text" name="cat_name" value="<?php echo htmlspecialchars($editCategory['name']); ?>" style="width:260px;" required></p>
                     <p><label><?php _e('描述'); ?></label><br><input type="text" name="cat_description" value="<?php echo htmlspecialchars((string) ($editCategory['description'] ?? '')); ?>" style="width:400px;"></p>
                     <p><label><?php _e('排序'); ?></label><br><input type="number" name="cat_sort_order" value="<?php echo (int) $editCategory['sort_order']; ?>" style="width:100px;"> <small>越小越靠前</small></p>
                     <p><label><?php _e('状态'); ?></label><br>
@@ -598,11 +654,11 @@ include 'menu.php';
 
             <form method="post" action="<?php echo htmlspecialchars($formAction); ?>" style="margin-bottom:12px;">
                 <input type="hidden" name="action" value="create_category">
-                <input type="text" name="cat_slug" placeholder="分类标识 如 vip" style="width:140px;" required>
-                <input type="text" name="cat_name" placeholder="分类名称" style="width:200px;" required>
+                <input type="text" name="cat_slug" placeholder="专题标识 如 vip" style="width:140px;" required>
+                <input type="text" name="cat_name" placeholder="专题名称" style="width:200px;" required>
                 <input type="text" name="cat_description" placeholder="描述（可选）" style="width:200px;">
                 <input type="number" name="cat_sort_order" value="0" style="width:80px;" title="排序">
-                <button class="btn btn-s" type="submit"><?php _e('新增分类'); ?></button>
+                <button class="btn btn-s" type="submit"><?php _e('新增专题'); ?></button>
             </form>
 
             <?php if ($categories): ?>
@@ -621,7 +677,7 @@ include 'menu.php';
                             | <form method="post" action="<?php echo htmlspecialchars($formAction); ?>" style="display:inline;">
                                 <input type="hidden" name="action" value="delete_category">
                                 <input type="hidden" name="cat_id" value="<?php echo (int) $cat['id']; ?>">
-                                <button type="submit" style="background:none;border:none;color:#3b82f6;cursor:pointer;padding:0;" onclick="return confirm('确定删除此分类？关联商品不会被删除。');"><?php _e('删除'); ?></button>
+                                <button type="submit" style="background:none;border:none;color:#3b82f6;cursor:pointer;padding:0;" onclick="return confirm('确定删除此商城专题？关联商品不会被删除。');"><?php _e('删除'); ?></button>
                             </form>
                         </td>
                     </tr>
@@ -629,7 +685,7 @@ include 'menu.php';
                 </tbody>
             </table>
             <?php else: ?>
-                <p style="color:#999;"><?php _e('暂无分类。创建分类后可在创建/编辑商品时选择。'); ?></p>
+                <p style="color:#999;"><?php _e('暂无商城专题。前台主分类建议使用 Typecho 原生文章分类；商城专题只用于额外筛选。'); ?></p>
             <?php endif; ?>
         </div>
 
@@ -680,6 +736,28 @@ include 'menu.php';
                 <p>
                     <label><?php _e('文章 cid'); ?></label><br>
                     <input type="number" name="content_id" min="1" value="<?php echo (int) ($editProduct['content_id'] ?? 0); ?>" style="width:220px;" placeholder="留空则不解锁文章">
+                    <?php
+                    $editContentId = (int) ($editProduct['content_id'] ?? 0);
+                    $editBoundContent = $editContentId > 0 ? ($boundContents[$editContentId] ?? null) : null;
+                    $editBoundCategory = $editContentId > 0 ? ($boundContentCategories[$editContentId] ?? '') : '';
+                    ?>
+                    <?php if ($editContentId > 0): ?>
+                        <br><small>
+                            <?php if ($editBoundContent): ?>
+                                <?php
+                                $editContentType = (string) ($editBoundContent['type'] ?? 'post');
+                                $editContentUrl = $options->adminUrl . ($editContentType === 'page' ? 'write-page.php' : 'write-post.php') . '?cid=' . $editContentId;
+                                ?>
+                                <?php _e('当前绑定'); ?>:
+                                <a href="<?php echo htmlspecialchars($editContentUrl); ?>"><?php echo htmlspecialchars((string) ($editBoundContent['title'] ?? ('cid ' . $editContentId))); ?></a>
+                                <?php if ($editBoundCategory !== ''): ?>
+                                    · <?php _e('文章分类'); ?>: <?php echo htmlspecialchars($editBoundCategory); ?>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <?php _e('当前 cid 未找到对应文章。'); ?>
+                            <?php endif; ?>
+                        </small>
+                    <?php endif; ?>
                 </p>
                 <?php
                 $hasPostAccess = false;
@@ -696,9 +774,9 @@ include 'menu.php';
                 <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;">
                 <h4><?php _e('前台展示'); ?></h4>
                 <p>
-                    <label><?php _e('分类'); ?></label><br>
+                    <label><?php _e('商城专题'); ?></label><br>
                     <select name="category_id">
-                        <option value="0"><?php _e('-- 无分类 --'); ?></option>
+                        <option value="0"><?php _e('-- 无专题 --'); ?></option>
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?php echo (int) $cat['id']; ?>" <?php if ((int) ($editProduct['category_id'] ?? 0) === (int) $cat['id']) echo 'selected'; ?>>
                                 <?php echo htmlspecialchars($cat['name']); ?>
@@ -785,9 +863,9 @@ include 'menu.php';
                 <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;">
                 <h4><?php _e('前台展示'); ?></h4>
                 <p>
-                    <label><?php _e('分类'); ?></label><br>
+                    <label><?php _e('商城专题'); ?></label><br>
                     <select name="category_id">
-                        <option value="0"><?php _e('-- 无分类 --'); ?></option>
+                        <option value="0"><?php _e('-- 无专题 --'); ?></option>
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?php echo (int) $cat['id']; ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
                         <?php endforeach; ?>
@@ -907,7 +985,7 @@ include 'menu.php';
                     <th><?php _e('标题'); ?></th>
                     <th><?php _e('金额'); ?></th>
                     <th><?php _e('状态'); ?></th>
-                    <th><?php _e('分类'); ?></th>
+                    <th><?php _e('专题'); ?></th>
                     <th><?php _e('策略'); ?></th>
                     <th><?php _e('库存'); ?></th>
                     <th><?php _e('短代码'); ?></th>
@@ -930,6 +1008,14 @@ include 'menu.php';
                     if (!empty($product['category_id']) && isset($categoriesById[(int) $product['category_id']])) {
                         $catName = $categoriesById[(int) $product['category_id']]['name'];
                     }
+                    $contentId = (int) ($product['content_id'] ?? 0);
+                    $boundContent = $contentId > 0 ? ($boundContents[$contentId] ?? null) : null;
+                    $boundContentCategory = $contentId > 0 ? ($boundContentCategories[$contentId] ?? '') : '';
+                    $boundEditUrl = '';
+                    if ($boundContent) {
+                        $contentType = (string) ($boundContent['type'] ?? 'post');
+                        $boundEditUrl = $options->adminUrl . ($contentType === 'page' ? 'write-page.php' : 'write-post.php') . '?cid=' . $contentId;
+                    }
                     ?>
                     <tr>
                         <td>
@@ -944,8 +1030,17 @@ include 'menu.php';
                                 <br><small style="color:#999;"><?php echo htmlspecialchars(function_exists('mb_substr') ? mb_substr($product['summary'], 0, 40) : substr($product['summary'], 0, 40)); ?></small>
                             <?php endif; ?>
                             <br><small><?php echo htmlspecialchars(implode(', ', $handlers)); ?></small>
-                            <?php if (!empty($product['content_id'])): ?>
-                                <br><small><?php _e('绑定文章 cid'); ?>: <?php echo (int) $product['content_id']; ?></small>
+                            <?php if ($contentId > 0): ?>
+                                <br><small><?php _e('绑定文章'); ?>:
+                                    <?php if ($boundContent): ?>
+                                        <a href="<?php echo htmlspecialchars($boundEditUrl); ?>"><?php echo htmlspecialchars((string) ($boundContent['title'] ?? ('cid ' . $contentId))); ?></a>
+                                        <?php if ($boundContentCategory !== ''): ?>
+                                            · <?php _e('文章分类'); ?>: <?php echo htmlspecialchars($boundContentCategory); ?>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        cid <?php echo $contentId; ?>（<?php _e('未找到文章'); ?>）
+                                    <?php endif; ?>
+                                </small>
                             <?php endif; ?>
                         </td>
                         <td><?php echo htmlspecialchars($product['currency'] . ' ' . $product['amount']); ?></td>
