@@ -27,6 +27,13 @@ $settingsHelpSource = file_get_contents($root . '/manage/settings-help.php');
 
 alipay_assert(strpos($pluginSource, 'alipayGatewayUrl') !== false, 'Plugin config exposes Alipay gateway URL');
 alipay_assert(strpos($pluginSource, 'normalizeAlipayGatewayUrl') !== false, 'Plugin normalizes Alipay gateway URL');
+alipay_assert(strpos($pluginSource, 'configHandle(array $settings') !== false, 'Plugin owns config saving for normalization and backup');
+alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_OPTION') !== false, 'Plugin backs up settings across disable/enable update cycles');
+alipay_assert(strpos($pluginSource, 'storedConfigDefaults') !== false, 'Plugin restores saved config values into the settings form');
+alipay_assert(strpos($pluginSource, 'normalizeAlipayPrivateKey') !== false, 'Plugin normalizes Alipay private key PEM text');
+alipay_assert(strpos($pluginSource, 'normalizeAlipayPublicKey') !== false, 'Plugin normalizes Alipay public key PEM text');
+alipay_assert(strpos($pluginSource, '可以直接粘贴完整 PEM') !== false, 'Plugin settings accept pasted full PEM keys');
+alipay_assert(strpos($pluginSource, '插件会保存为 PEM 文本') !== false, 'Plugin settings normalize pasted key bodies to PEM text');
 alipay_assert(strpos($pluginSource, 'openapi-sandbox.dl.alipaydev.com/gateway.do') !== false, 'Plugin mentions Alipay sandbox gateway URL');
 alipay_assert(strpos($gatewaySource, '$client->gatewayUrl = $this->gatewayUrl();') !== false, 'Alipay client uses configured gateway URL');
 alipay_assert(strpos($gatewaySource, 'function gatewayUrl') !== false, 'Alipay gateway has URL normalization fallback');

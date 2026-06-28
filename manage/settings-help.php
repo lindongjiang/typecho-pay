@@ -68,10 +68,10 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
             <ol>
                 <li>在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> 创建应用，并开通电脑网站支付或当面付。</li>
                 <li>接口加签方式选择 <strong>普通公钥模式</strong>，生成应用私钥，上传应用公钥后复制支付宝公钥。</li>
-                <li>插件设置中填写 AppID、网关地址、应用私钥、支付宝公钥和可选 Seller ID。</li>
+                <li>插件设置中填写 AppID、网关地址、应用私钥、支付宝公钥和可选 Seller ID；应用私钥和支付宝公钥直接粘贴文本保存，不需要上传密钥文件。</li>
                 <li>沙箱测试网关：<code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>；正式环境网关：<code>https://openapi.alipay.com/gateway.do</code>。</li>
             </ol>
-            <p><strong>注意：</strong>当前暂不支持支付宝公钥证书模式。请使用普通公钥模式，或后续再扩展证书字段。</p>
+            <p><strong>注意：</strong>当前暂不支持支付宝公钥证书模式。请使用普通公钥模式，或后续再扩展证书字段。插件保存设置时会把只粘贴正文的密钥规范化为 PEM 文本，升级或停用再启用时会从配置备份恢复显示。</p>
         </div>
 
         <div class="table-description" style="margin-top:30px;">

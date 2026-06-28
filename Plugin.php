@@ -54,7 +54,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.10
+ * @version 0.4.11
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -66,6 +66,7 @@ class Plugin implements PluginInterface
     private const CARD_INVENTORY_PANEL = 'TypechoPay/manage/card-inventory.php';
     private const CARD_SALES_PANEL = 'TypechoPay/manage/card-sales.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
+    private const CONFIG_BACKUP_OPTION = 'typechopay_config_backup';
     private const SCHEMA_VERSION = 9;
 
     /**
@@ -101,6 +102,8 @@ class Plugin implements PluginInterface
      */
     public static function deactivate()
     {
+        self::backupPluginConfig();
+
         Helper::removeAction(self::ACTION);
         $menuIndex = Helper::removeMenu(self::MENU);
         Helper::removePanel($menuIndex, self::ORDERS_PANEL);
@@ -119,6 +122,8 @@ class Plugin implements PluginInterface
      */
     public static function config(Form $form)
     {
+        $savedConfig = self::storedConfigDefaults();
+
         // ============================================================
         // 基础设置
         // ============================================================
@@ -129,7 +134,7 @@ class Plugin implements PluginInterface
                 'wechat' => '微信支付（中国，CNY）',
                 'alipay' => '支付宝（中国，CNY）',
             ],
-            ['alipay'],
+            self::normalizeGateways($savedConfig['enabledGateways'] ?? ['alipay']) ?: ['alipay'],
             _t('启用支付方式'),
             _t('当前后台只保留人民币支付方式。未勾选的支付方式不会在前端显示。')
         );
@@ -138,7 +143,7 @@ class Plugin implements PluginInterface
         $endpointSecret = new Password(
             'endpointSecret',
             null,
-            '',
+            (string) ($savedConfig['endpointSecret'] ?? ''),
             _t('入口签名密钥'),
             _t('用于文章付款入口金额防篡改。留空时回退到 Typecho 站点 secret。<br><strong>生产环境强烈建议单独设置</strong>，避免与其他功能共用密钥。')
         );
@@ -152,7 +157,7 @@ class Plugin implements PluginInterface
                 'bottom' => '正文底部',
                 'after_first_paragraph' => '第一段之后',
             ],
-            'off',
+            self::normalizeAutoInjectPosition((string) ($savedConfig['productAutoInjectPosition'] ?? 'off')),
             _t('文章商品卡自动插入位置'),
             _t('文章 cid 绑定了上架商品时，自动在详情页显示购买模块。若文章只包含 [typechopay_content]，仍会自动插入；只有 [typechopay]、[typechopay_product]、[typechopay_shop] 会阻止重复插入。若文章页不显示卡密商品，请先确认这里不是“不自动插入”。')
         );
@@ -164,7 +169,7 @@ class Plugin implements PluginInterface
                 '1' => '开启 - 加载插件默认前台样式',
                 '0' => '关闭 - 由主题完全接管样式',
             ],
-            '1',
+            (string) ($savedConfig['loadFrontendCss'] ?? '1') !== '0' ? '1' : '0',
             _t('加载默认前台样式'),
             _t('关闭后插件不再输出 assets/typechopay.css；适合主题已通过 typechopay/style.css 或自定义 CSS 完全覆盖前台展示。')
         );
@@ -174,13 +179,13 @@ class Plugin implements PluginInterface
         // 微信支付配置
         // ============================================================
 
-        $form->addInput(new Text('wechatAppId', null, '', _t('微信支付 AppID'), _t('当前支持 Native 扫码支付，仅支持 CNY（人民币）。公众号、小程序或网站应用绑定的 AppID。<br>在 <a href="https://mp.weixin.qq.com/" target="_blank">微信公众平台</a> 或 <a href="https://open.weixin.qq.com/" target="_blank">微信开放平台</a> 获取。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
-        $form->addInput(new Text('wechatMchId', null, '', _t('微信支付商户号（MchID）'), _t('在 <a href="https://pay.weixin.qq.com/" target="_blank">微信支付商户平台</a> → 账户中心 → 商户信息 中查看。')));
-        $form->addInput(new Text('wechatMerchantSerial', null, '', _t('商户 API 证书序列号'), _t('在微信支付商户平台 → API 安全 → 证书序列号 中查看。<br>格式类似：<code>7D578B5A...</code>')));
-        $form->addInput(new Text('wechatPrivateKeyPath', null, '', _t('商户 API 私钥文件路径'), _t('下载证书时获得的 <code>apiclient_key.pem</code> 文件的<strong>绝对路径</strong>。<br>建议放在网站根目录外，例如：<code>/www/secure/apiclient_key.pem</code><br>确保 PHP 有读取权限。')));
-        $form->addInput(new Text('wechatPlatformPublicKeyPath', null, '', _t('微信支付平台公钥/证书路径'), _t('用于回调验签的平台证书文件路径。<br>从微信支付商户平台下载，例如：<code>/www/secure/wechatpay_platform.pem</code>')));
-        $form->addInput(new Text('wechatPlatformSerial', null, '', _t('微信支付平台证书序列号/公钥 ID'), _t('在微信支付商户平台 → API 安全 → 平台证书 中查看。')));
-        $form->addInput(new Password('wechatApiV3Key', null, '', _t('微信支付 APIv3 Key'), _t('在微信支付商户平台 → API 安全 中设置的 32 位密钥。<br>用于回调通知的 AES-GCM 解密。<strong>请妥善保管，不要泄露。</strong>')));
+        $form->addInput(new Text('wechatAppId', null, (string) ($savedConfig['wechatAppId'] ?? ''), _t('微信支付 AppID'), _t('当前支持 Native 扫码支付，仅支持 CNY（人民币）。公众号、小程序或网站应用绑定的 AppID。<br>在 <a href="https://mp.weixin.qq.com/" target="_blank">微信公众平台</a> 或 <a href="https://open.weixin.qq.com/" target="_blank">微信开放平台</a> 获取。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
+        $form->addInput(new Text('wechatMchId', null, (string) ($savedConfig['wechatMchId'] ?? ''), _t('微信支付商户号（MchID）'), _t('在 <a href="https://pay.weixin.qq.com/" target="_blank">微信支付商户平台</a> → 账户中心 → 商户信息 中查看。')));
+        $form->addInput(new Text('wechatMerchantSerial', null, (string) ($savedConfig['wechatMerchantSerial'] ?? ''), _t('商户 API 证书序列号'), _t('在微信支付商户平台 → API 安全 → 证书序列号 中查看。<br>格式类似：<code>7D578B5A...</code>')));
+        $form->addInput(new Text('wechatPrivateKeyPath', null, (string) ($savedConfig['wechatPrivateKeyPath'] ?? ''), _t('商户 API 私钥文件路径'), _t('下载证书时获得的 <code>apiclient_key.pem</code> 文件的<strong>绝对路径</strong>。<br>建议放在网站根目录外，例如：<code>/www/secure/apiclient_key.pem</code><br>确保 PHP 有读取权限。')));
+        $form->addInput(new Text('wechatPlatformPublicKeyPath', null, (string) ($savedConfig['wechatPlatformPublicKeyPath'] ?? ''), _t('微信支付平台公钥/证书路径'), _t('用于回调验签的平台证书文件路径。<br>从微信支付商户平台下载，例如：<code>/www/secure/wechatpay_platform.pem</code>')));
+        $form->addInput(new Text('wechatPlatformSerial', null, (string) ($savedConfig['wechatPlatformSerial'] ?? ''), _t('微信支付平台证书序列号/公钥 ID'), _t('在微信支付商户平台 → API 安全 → 平台证书 中查看。')));
+        $form->addInput(new Password('wechatApiV3Key', null, (string) ($savedConfig['wechatApiV3Key'] ?? ''), _t('微信支付 APIv3 Key'), _t('在微信支付商户平台 → API 安全 中设置的 32 位密钥。<br>用于回调通知的 AES-GCM 解密。<strong>请妥善保管，不要泄露。</strong>')));
 
         // ============================================================
         // 支付宝配置
@@ -192,17 +197,17 @@ class Plugin implements PluginInterface
                 'page' => '电脑网站支付（Page Pay）- 用户跳转支付宝页面',
                 'precreate' => '当面付（Precreate）- 生成二维码扫码支付',
             ],
-            'page',
+            (string) ($savedConfig['alipayMode'] ?? 'page') === 'precreate' ? 'precreate' : 'page',
             _t('支付宝支付模式'),
             _t('Page Pay 适合电脑端，会跳转到支付宝收银台；Precreate 适合生成二维码让用户扫码支付。当前仅支持支付宝普通公钥模式，暂不支持公钥证书模式。')
         );
         $form->addInput($alipayMode);
 
-        $form->addInput(new Text('alipayAppId', null, '', _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
-        $form->addInput(new Text('alipayGatewayUrl', null, 'https://openapi.alipay.com/gateway.do', _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
-        $form->addInput(new Textarea('alipayPrivateKey', null, '', _t('支付宝应用私钥'), _t('在支付宝开放平台普通公钥模式下生成的应用私钥（RSA2），以 <code>-----BEGIN RSA PRIVATE KEY-----</code> 开头。<br><strong>这是敏感信息，请勿截图外泄！</strong>')));
-        $form->addInput(new Textarea('alipayPublicKey', null, '', _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签），以 <code>-----BEGIN PUBLIC KEY-----</code> 开头。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。')));
-        $form->addInput(new Text('alipaySellerId', null, '', _t('支付宝 Seller ID（可选）'), _t('填写后会校验收款账号，提高安全性。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
+        $form->addInput(new Text('alipayAppId', null, (string) ($savedConfig['alipayAppId'] ?? ''), _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
+        $form->addInput(new Text('alipayGatewayUrl', null, self::normalizeAlipayGatewayUrl((string) ($savedConfig['alipayGatewayUrl'] ?? '')), _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
+        $form->addInput(new Textarea('alipayPrivateKey', null, self::normalizeAlipayPrivateKey((string) ($savedConfig['alipayPrivateKey'] ?? '')), _t('支付宝应用私钥'), _t('支付宝开放平台普通公钥模式下生成的应用私钥（RSA2）。可以直接粘贴完整 PEM，也可以粘贴支付宝工具生成的私钥正文，插件会保存为 PEM 文本。<br><strong>这是敏感信息，请勿截图外泄！</strong>')));
+        $form->addInput(new Textarea('alipayPublicKey', null, self::normalizeAlipayPublicKey((string) ($savedConfig['alipayPublicKey'] ?? '')), _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签）。可以直接粘贴完整 PEM，也可以粘贴支付宝公钥正文，插件会保存为 PEM 文本。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。')));
+        $form->addInput(new Text('alipaySellerId', null, (string) ($savedConfig['alipaySellerId'] ?? ''), _t('支付宝 Seller ID（可选）'), _t('填写后会校验收款账号，提高安全性。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
     }
 
     /**
@@ -212,6 +217,116 @@ class Plugin implements PluginInterface
      */
     public static function personalConfig(Form $form)
     {
+    }
+
+    public static function configHandle(array $settings, bool $isInit): void
+    {
+        $settings = self::normalizeConfigSettings($settings);
+        \Widget\Plugins\Edit::configPlugin('TypechoPay', $settings);
+        self::writeConfigBackup($settings);
+    }
+
+    private static function normalizeConfigSettings(array $settings): array
+    {
+        $previous = self::storedConfigDefaults();
+        $secretKeys = ['endpointSecret', 'wechatApiV3Key', 'alipayPrivateKey', 'alipayPublicKey'];
+        foreach ($secretKeys as $key) {
+            $current = trim((string) ($settings[$key] ?? ''));
+            if ($current === '' && !empty($previous[$key])) {
+                $settings[$key] = (string) $previous[$key];
+            }
+        }
+
+        $settings['enabledGateways'] = self::normalizeGateways($settings['enabledGateways'] ?? ['alipay']) ?: ['alipay'];
+        $settings['productAutoInjectPosition'] = self::normalizeAutoInjectPosition(
+            (string) ($settings['productAutoInjectPosition'] ?? 'off')
+        );
+        $settings['loadFrontendCss'] = (string) ($settings['loadFrontendCss'] ?? '1') !== '0' ? '1' : '0';
+        $settings['alipayMode'] = (string) ($settings['alipayMode'] ?? 'page') === 'precreate' ? 'precreate' : 'page';
+        $settings['alipayGatewayUrl'] = self::normalizeAlipayGatewayUrl((string) ($settings['alipayGatewayUrl'] ?? ''));
+        $settings['alipayPrivateKey'] = self::normalizeAlipayPrivateKey((string) ($settings['alipayPrivateKey'] ?? ''));
+        $settings['alipayPublicKey'] = self::normalizeAlipayPublicKey((string) ($settings['alipayPublicKey'] ?? ''));
+
+        return $settings;
+    }
+
+    private static function storedConfigDefaults(): array
+    {
+        $pluginConfig = [];
+        try {
+            $pluginConfig = self::configObjectToArray(Options::alloc()->plugin('TypechoPay'));
+        } catch (\Throwable $e) {
+            $pluginConfig = [];
+        }
+
+        $backupConfig = self::readConfigBackup();
+        return array_merge($backupConfig, $pluginConfig);
+    }
+
+    private static function configObjectToArray($config): array
+    {
+        if (empty($config)) {
+            return [];
+        }
+
+        $values = [];
+        foreach ($config as $key => $value) {
+            $values[$key] = $value;
+        }
+
+        return $values;
+    }
+
+    private static function readConfigBackup(): array
+    {
+        try {
+            $row = Db::get()->fetchRow(
+                Db::get()->select('value')->from('table.options')
+                    ->where('name = ?', self::CONFIG_BACKUP_OPTION)
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+            $decoded = $row ? json_decode((string) ($row['value'] ?? ''), true) : null;
+            return is_array($decoded) ? $decoded : [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private static function writeConfigBackup(array $settings): void
+    {
+        try {
+            $db = Db::get();
+            $value = json_encode($settings);
+            $exists = $db->fetchRow(
+                $db->select('name')->from('table.options')
+                    ->where('name = ?', self::CONFIG_BACKUP_OPTION)
+                    ->where('user = ?', 0)
+                    ->limit(1)
+            );
+            if ($exists) {
+                $db->query($db->update('table.options')->rows(['value' => $value])
+                    ->where('name = ?', self::CONFIG_BACKUP_OPTION)
+                    ->where('user = ?', 0));
+                return;
+            }
+
+            $db->query($db->insert('table.options')->rows([
+                'name' => self::CONFIG_BACKUP_OPTION,
+                'value' => $value,
+                'user' => 0,
+            ]));
+        } catch (\Throwable $e) {
+            error_log('[TypechoPay] Failed to back up plugin config: ' . $e->getMessage());
+        }
+    }
+
+    private static function backupPluginConfig(): void
+    {
+        $settings = self::storedConfigDefaults();
+        if ($settings) {
+            self::writeConfigBackup($settings);
+        }
     }
 
     /**
@@ -378,7 +493,7 @@ class Plugin implements PluginInterface
                                 <tbody>
                                 <?php foreach ($recentCards as $card): ?>
                                     <tr>
-                                        <td><?php echo htmlspecialchars((string) ($card['code_mask'] ?? '')); ?></td>
+                                        <td><code><?php echo htmlspecialchars((string) ($card['card_display'] ?? '')); ?></code></td>
                                         <td><?php echo htmlspecialchars((string) ($card['status'] ?? '')); ?></td>
                                         <td><?php echo htmlspecialchars((string) ($card['created_at'] ?? '')); ?></td>
                                     </tr>
@@ -752,8 +867,8 @@ class Plugin implements PluginInterface
             'alipayMode' => (string) ($plugin->alipayMode ?? 'page'),
             'alipayAppId' => (string) ($plugin->alipayAppId ?? ''),
             'alipayGatewayUrl' => self::normalizeAlipayGatewayUrl((string) ($plugin->alipayGatewayUrl ?? '')),
-            'alipayPrivateKey' => (string) ($plugin->alipayPrivateKey ?? ''),
-            'alipayPublicKey' => (string) ($plugin->alipayPublicKey ?? ''),
+            'alipayPrivateKey' => self::normalizeAlipayPrivateKey((string) ($plugin->alipayPrivateKey ?? '')),
+            'alipayPublicKey' => self::normalizeAlipayPublicKey((string) ($plugin->alipayPublicKey ?? '')),
             'alipaySellerId' => (string) ($plugin->alipaySellerId ?? ''),
         ];
     }
@@ -774,6 +889,37 @@ class Plugin implements PluginInterface
         }
 
         return $url;
+    }
+
+    private static function normalizeAlipayPrivateKey(string $key): string
+    {
+        return self::normalizePemBlock($key, 'RSA PRIVATE KEY');
+    }
+
+    private static function normalizeAlipayPublicKey(string $key): string
+    {
+        return self::normalizePemBlock($key, 'PUBLIC KEY');
+    }
+
+    private static function normalizePemBlock(string $value, string $defaultType): string
+    {
+        $value = trim(str_replace(["\r\n", "\r"], "\n", $value));
+        if ($value === '') {
+            return '';
+        }
+
+        if (strpos($value, '-----BEGIN ') !== false) {
+            return preg_replace("/\n{3,}/", "\n\n", $value) ?: $value;
+        }
+
+        $body = preg_replace('/\s+/', '', $value);
+        if ($body === '') {
+            return '';
+        }
+
+        return '-----BEGIN ' . $defaultType . "-----\n"
+            . rtrim(chunk_split($body, 64, "\n"))
+            . "\n-----END " . $defaultType . '-----';
     }
 
     /**
@@ -1734,13 +1880,7 @@ class Plugin implements PluginInterface
             return [];
         }
 
-        $limit = max(1, min(20, $limit));
-        return Db::get()->fetchAll(
-            Db::get()->select('code_mask', 'status', 'created_at')->from('table.pay_card_items')
-                ->where('product_id = ?', $productId)
-                ->order('id', Db::SORT_DESC)
-                ->limit($limit)
-        );
+        return (new CardCodeService(Db::get()))->recentForAdmin($productId, $limit);
     }
 
     private static function emptyArticleCardStats(): array
@@ -2765,7 +2905,7 @@ class Plugin implements PluginInterface
             self::trySchema($db, "CREATE INDEX {$batchStatusIdx} ON {$cardItemsTable} (batch_id, status)");
         }
 
-        // v8: Add code_mask column for admin display.
+        // v8: Add code_mask column for legacy inventory labels.
         $codeMaskType = $isMysql ? 'VARCHAR(64)' : ($isPgsql ? 'VARCHAR(64)' : 'TEXT');
         self::trySchema($db, "ALTER TABLE {$cardItemsTable} ADD COLUMN code_mask {$codeMaskType} DEFAULT NULL");
 

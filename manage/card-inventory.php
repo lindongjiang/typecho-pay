@@ -146,7 +146,7 @@ include 'menu.php';
                         <th><?php _e('ID'); ?></th>
                         <th><?php _e('商品'); ?></th>
                         <th><?php _e('批次'); ?></th>
-                        <th><?php _e('卡号掩码'); ?></th>
+                        <th><?php _e('卡密'); ?></th>
                         <th><?php _e('状态'); ?></th>
                         <th><?php _e('预留订单'); ?></th>
                         <th><?php _e('售出订单'); ?></th>
@@ -159,24 +159,12 @@ include 'menu.php';
                         <tr><td colspan="10"><h6 class="typecho-list-table-title"><?php _e('暂无卡密'); ?></h6></td></tr>
                     <?php endif; ?>
                     <?php foreach ($rows as $row): ?>
-                        <?php
-                        // Use code_mask if available, otherwise fall back to ciphertext prefix.
-                        $masked = (string) ($row['code_mask'] ?? '');
-                        if ($masked === '') {
-                            $code = (string) ($row['code_ciphertext'] ?? '');
-                            $masked = '****';
-                            if ($code !== '') {
-                                $prefix = function_exists('mb_substr') ? mb_substr($code, 0, 8) : substr($code, 0, 8);
-                                $masked = $prefix . '****';
-                            }
-                        }
-                        ?>
                         <tr>
                             <td><input type="checkbox" name="ids[]" value="<?php echo (int) $row['id']; ?>"></td>
                             <td><?php echo (int) $row['id']; ?></td>
                             <td><?php echo (int) $row['product_id']; ?></td>
                             <td><?php echo (int) ($row['batch_id'] ?? 0); ?></td>
-                            <td><code><?php echo htmlspecialchars($masked); ?></code></td>
+                            <td><code><?php echo htmlspecialchars((string) ($row['card_display'] ?? '')); ?></code></td>
                             <td>
                                 <?php
                                 $statusColors = [

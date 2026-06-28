@@ -2,6 +2,30 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay Settings and Full Card Display (v0.4.11)
+
+### Change
+
+Aligned operator settings with Alipay ordinary public-key mode and removed starred card-code display from admin surfaces.
+
+### Scope
+
+- Added a TypechoPay config backup option so payment settings survive update flows that require plugin disable/enable.
+- Added a custom config save handler that normalizes Alipay gateway/mode and preserves existing secret values when a settings form submits them empty.
+- Normalizes bare Alipay application private-key and Alipay public-key bodies into PEM text, while still allowing full PEM pastes.
+- Changed article-editor recent card rows, card inventory, and card sales to use decrypted full admin display values instead of starred masks.
+- Kept card-code database storage encrypted; only administrator pages decrypt for display.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-27 Article Card Import Submit Fix (v0.4.10)
 
 ### Change
@@ -218,7 +242,7 @@ Moved the card-code operator workflow closer to the article editor bottom area a
 - Simplified the editor panel title to **文章付费与卡密** and kept only off, paid reading, and card-code management modes.
 - Removed the article-editor JPY selector. Article-created products are fixed to CNY and use cents.
 - Kept product key, purchase policy, stock display, cover, and summary as hidden/preserved values in the article editor; advanced changes remain in 商品管理.
-- Added card-code inventory stats, recent masked card rows, and pasted card import in the article editor panel.
+- Added card-code inventory stats, recent card rows, and pasted card import in the article editor panel.
 - Saving an article in card-code mode can import pasted card lines through `CardCodeService`; file upload and preview confirmation remain in 商品管理.
 
 ### Boundary

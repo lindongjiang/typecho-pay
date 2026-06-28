@@ -86,6 +86,7 @@ include 'menu.php';
                 <colgroup>
                     <col width="6%">
                     <col width="14%">
+                    <col width="14%">
                     <col width="10%">
                     <col width="8%">
                     <col width="8%">
@@ -100,6 +101,7 @@ include 'menu.php';
                 <thead>
                 <tr>
                     <th><?php _e('卡密ID'); ?></th>
+                    <th><?php _e('卡密'); ?></th>
                     <th><?php _e('订单号'); ?></th>
                     <th><?php _e('金额'); ?></th>
                     <th><?php _e('网关'); ?></th>
@@ -115,11 +117,12 @@ include 'menu.php';
                 </thead>
                 <tbody>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="12"><h6 class="typecho-list-table-title"><?php _e('暂无售出记录'); ?></h6></td></tr>
+                    <tr><td colspan="13"><h6 class="typecho-list-table-title"><?php _e('暂无售出记录'); ?></h6></td></tr>
                 <?php endif; ?>
                 <?php foreach ($rows as $row): ?>
                     <tr>
                         <td><?php echo (int) $row['card_id']; ?></td>
+                        <td><code><?php echo htmlspecialchars((string) ($row['card_display'] ?? '')); ?></code></td>
                         <td>
                             <?php if (!empty($row['out_trade_no'])): ?>
                                 <code><?php echo htmlspecialchars((string) $row['out_trade_no']); ?></code>

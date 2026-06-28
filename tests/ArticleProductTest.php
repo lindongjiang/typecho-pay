@@ -47,7 +47,9 @@ ap_assert(strpos($pluginSource, 'function productPanelDiagnosticComments') !== f
 ap_assert(strpos($pluginSource, 'function currentVisitorCardDeliveryUrl') !== false, 'Product panel can link to delivered card codes');
 ap_assert(strpos($pluginSource, 'function importArticleCardLines') !== false, 'Editor can import pasted card lines on save');
 ap_assert(strpos($pluginSource, 'function articleCardStats') !== false, 'Editor shows card inventory stats');
-ap_assert(strpos($pluginSource, 'function recentArticleCards') !== false, 'Editor shows recent card masks');
+ap_assert(strpos($pluginSource, 'function recentArticleCards') !== false, 'Editor shows recent card values');
+ap_assert(strpos($pluginSource, 'recentForAdmin') !== false, 'Editor loads full card display values through CardCodeService');
+ap_assert(strpos($pluginSource, 'card_display') !== false, 'Editor renders full card display value instead of masked code');
 ap_assert(strpos($pluginSource, 'new CardCodeService') !== false, 'Editor import uses CardCodeService');
 ap_assert(strpos($pluginSource, 'typechopay_pay_mode') !== false, 'Editor panel has pay mode field');
 ap_assert(strpos($pluginSource, 'typechopay_insert_shortcode') !== false, 'Editor panel can insert shortcode');

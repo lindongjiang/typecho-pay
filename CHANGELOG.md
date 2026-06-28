@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.4.11 - 2026-06-28
+
+### Alipay settings
+
+- Added TypechoPay config backup/restore so plugin updates that require disable/enable can keep saved payment settings visible.
+- Alipay AppID, gateway URL, application private key, Alipay public key, and Seller ID now load existing saved values into the settings form defaults.
+- Alipay ordinary public-key-mode keys can be pasted directly into plugin settings; bare key bodies are normalized to PEM text before saving.
+
+### Card codes
+
+- Article editor card lists, card inventory, and card sales now show full card-code values for administrators instead of starred masks.
+- New imports no longer generate starred `code_mask` compatibility labels.
+
 ## 0.4.10 - 2026-06-27
 
 ### Article editor
@@ -83,7 +96,7 @@
 
 - Simplified the article editor paid-feature panel to the common modes: off, paid reading, and card-code management.
 - Fixed article-editor products to CNY so the card-code workflow no longer shows a JPY selector.
-- Added card-code inventory stats, recent masked card rows, and pasted card import directly at the bottom of the article editor.
+- Added card-code inventory stats, recent card rows, and pasted card import directly at the bottom of the article editor.
 - Saving an article in card-code mode can now import pasted card lines through `CardCodeService` while keeping full file upload and preview import in 商品管理.
 
 ## 0.4.1 - 2026-06-26

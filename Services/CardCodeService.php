@@ -120,7 +120,7 @@ final class CardCodeService
                             'batch_id' => (int) $batchId,
                             'code_ciphertext' => $codeCiphertext,
                             'secret_ciphertext' => $secretCiphertext,
-                            'code_mask' => $this->maskCode($item['code']),
+                            'code_mask' => $this->legacyCodeLabel($item['code']),
                             'fingerprint' => $fp,
                             'status' => 'available',
                             'reserved_order_id' => null,
@@ -233,6 +233,7 @@ final class CardCodeService
         $rows = $this->db->fetchAll(
             $select->order('id', Db::SORT_DESC)->limit($perPage)->offset($offset)
         );
+        $rows = $this->withAdminDisplayFields($rows);
 
         return ['rows' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage];
     }
@@ -307,12 +308,16 @@ final class CardCodeService
             $cardSelect->where('product_id = ?', $productId);
         }
         $cards = $this->db->fetchAll($cardSelect);
+        $cards = $this->withAdminDisplayFields($cards);
 
         // Enrich each card with order and fulfillment data.
         $rows = [];
         foreach ($cards as $card) {
             $row = [
                 'card_id' => (int) $card['id'],
+                'card_display' => (string) ($card['card_display'] ?? ''),
+                'code_display' => (string) ($card['code_display'] ?? ''),
+                'secret_display' => isset($card['secret_display']) ? (string) $card['secret_display'] : null,
                 'product_id' => (int) $card['product_id'],
                 'batch_id' => isset($card['batch_id']) ? (int) $card['batch_id'] : 0,
                 'delivered_order_id' => isset($card['delivered_order_id']) ? (int) $card['delivered_order_id'] : null,
@@ -367,6 +372,22 @@ final class CardCodeService
         }
 
         return ['rows' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage];
+    }
+
+    public function recentForAdmin(int $productId, int $limit): array
+    {
+        if ($productId <= 0) {
+            return [];
+        }
+
+        $rows = $this->db->fetchAll(
+            $this->db->select()->from('table.pay_card_items')
+                ->where('product_id = ?', $productId)
+                ->order('id', Db::SORT_DESC)
+                ->limit(max(1, min(20, $limit)))
+        );
+
+        return $this->withAdminDisplayFields($rows);
     }
 
     public function reserveForOrder(array $order): ?array
@@ -687,19 +708,14 @@ final class CardCodeService
         return $existing;
     }
 
-    /**
-     * Generate a display-safe mask for a card code.
-     * Shows first 4 + **** + last 4 characters.
-     */
-    private function maskCode(string $code): string
+    private function legacyCodeLabel(string $code): string
     {
         $len = function_exists('mb_strlen') ? mb_strlen($code) : strlen($code);
-        if ($len <= 8) {
-            return str_repeat('*', max(4, $len));
+        if ($len <= 64) {
+            return $code;
         }
-        $start = function_exists('mb_substr') ? mb_substr($code, 0, 4) : substr($code, 0, 4);
-        $end = function_exists('mb_substr') ? mb_substr($code, -4) : substr($code, -4);
-        return $start . '****' . $end;
+
+        return (function_exists('mb_substr') ? mb_substr($code, 0, 61) : substr($code, 0, 61)) . '...';
     }
 
     /**
@@ -794,6 +810,34 @@ final class CardCodeService
                 : null,
             'delivered_at' => $row['delivered_at'] ?? null,
         ];
+    }
+
+    private function withAdminDisplayFields(array $rows): array
+    {
+        $visible = [];
+        foreach ($rows as $row) {
+            $visible[] = $this->withAdminDisplayField($row);
+        }
+
+        return $visible;
+    }
+
+    private function withAdminDisplayField(array $row): array
+    {
+        try {
+            $card = $this->decryptRow($row);
+            $row['code_display'] = $card['code'];
+            $row['secret_display'] = $card['secret'];
+            $row['card_display'] = $card['secret'] !== null && $card['secret'] !== ''
+                ? $card['code'] . ' ---- ' . $card['secret']
+                : $card['code'];
+        } catch (\Throwable $e) {
+            $row['code_display'] = '[解密失败]';
+            $row['secret_display'] = null;
+            $row['card_display'] = '[解密失败]';
+        }
+
+        return $row;
     }
 
     private function fingerprint(int $productId, string $code, ?string $secret): string
