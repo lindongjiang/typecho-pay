@@ -2,6 +2,7 @@
 
 use Typecho\Common;
 use TypechoPlugin\TypechoPay\Plugin;
+use TypechoPlugin\TypechoPay\Support\AlipayKey;
 use TypechoPlugin\TypechoPay\Support\AlipaySdk;
 
 if (!defined('__TYPECHO_ADMIN__')) {
@@ -58,9 +59,13 @@ $addCheck('支付宝', '网关地址 HTTPS', $gatewayUrl !== '' && $isHttps($gat
 $privateKey = (string) ($config['alipayPrivateKey'] ?? '');
 $privateOk = function_exists('openssl_pkey_get_private') && $privateKey !== '' && @openssl_pkey_get_private($privateKey) !== false;
 $addCheck('支付宝', '应用私钥格式', $privateOk, $privateKey === '' ? '未填写' : ($privateOk ? 'OpenSSL 可解析' : 'OpenSSL 无法解析，请确认是应用私钥'));
+$privateSdkOk = $privateKey !== '' && AlipayKey::canSignWithSdkBody($privateKey);
+$addCheck('支付宝', '应用私钥 SDK 签名', $privateSdkOk, $privateKey === '' ? '未填写' : ($privateSdkOk ? 'AOP SDK 可生成 RSA2 签名' : 'AOP SDK 无法用当前私钥签名，请确认填写的是支付宝工具生成的非 JAVA 应用私钥'));
 $publicKey = (string) ($config['alipayPublicKey'] ?? '');
 $publicOk = function_exists('openssl_pkey_get_public') && $publicKey !== '' && @openssl_pkey_get_public($publicKey) !== false;
 $addCheck('支付宝', '支付宝公钥格式', $publicOk, $publicKey === '' ? '未填写' : ($publicOk ? 'OpenSSL 可解析' : 'OpenSSL 无法解析，请确认填写的是支付宝公钥，不是应用公钥'));
+$publicSdkOk = $publicKey !== '' && AlipayKey::canLoadPublicWithSdkBody($publicKey);
+$addCheck('支付宝', '支付宝公钥 SDK 验签格式', $publicSdkOk, $publicKey === '' ? '未填写' : ($publicSdkOk ? 'AOP SDK 可加载支付宝公钥' : 'AOP SDK 无法加载当前支付宝公钥，请确认填写的是普通公钥模式下的支付宝公钥'));
 $addCheck('支付宝', '异步通知 HTTPS', $isHttps($notifyAlipay), $notifyAlipay);
 
 include 'header.php';

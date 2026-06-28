@@ -23,7 +23,9 @@ function alipay_assert(bool $condition, string $label): void
 $pluginSource = file_get_contents($root . '/Plugin.php');
 $gatewaySource = file_get_contents($root . '/Gateways/AlipayGateway.php');
 $sdkSource = file_get_contents($root . '/Support/AlipaySdk.php');
+$alipayKeySource = file_get_contents($root . '/Support/AlipayKey.php');
 $settingsHelpSource = file_get_contents($root . '/manage/settings-help.php');
+$diagnosticsSource = file_get_contents($root . '/manage/diagnostics.php');
 
 alipay_assert(strpos($pluginSource, 'alipayGatewayUrl') !== false, 'Plugin config exposes Alipay gateway URL');
 alipay_assert(strpos($pluginSource, 'normalizeAlipayGatewayUrl') !== false, 'Plugin normalizes Alipay gateway URL');
@@ -35,13 +37,13 @@ alipay_assert(strpos($pluginSource, 'self::restorePluginConfigFromBackup();') !=
 alipay_assert(strpos($pluginSource, 'mergeConfigWithSensitiveFallback') !== false, 'Config defaults preserve backed-up sensitive fields when current values are empty');
 alipay_assert(strpos($pluginSource, 'return self::mergeConfigWithSensitiveFallback($backupConfig, $pluginConfig);') !== false, 'Stored config defaults do not let empty plugin rows override sensitive backup fields');
 alipay_assert(strpos($pluginSource, '$settings = self::mergeConfigWithSensitiveFallback(self::readConfigBackup(), $settings);') !== false, 'Config backup writer preserves previous sensitive backup values when new settings are empty');
-alipay_assert(strpos($pluginSource, 'RedactedHiddenField') !== false, 'Sensitive saved config fields are not rendered back into HTML');
+alipay_assert(strpos($pluginSource, 'RedactedHiddenField') !== false, 'Stored sensitive config names still have compatibility hidden fields');
 alipay_assert(strpos($pluginSource, "new RedactedHiddenField('alipayPrivateKey', null, '')") !== false, 'Redacted hidden fields use Typecho 1.3 constructor signature');
 alipay_assert(strpos($pluginSource, "new RedactedHiddenField('alipayPrivateKey', '')") === false, 'Redacted hidden fields do not pass hidden values as options');
 alipay_assert(strpos($pluginSource, 'endpointSecretInput') !== false, 'Endpoint secret replacement uses a separate visible input');
 alipay_assert(strpos($pluginSource, 'wechatApiV3KeyInput') !== false, 'WeChat APIv3 key replacement uses a separate visible input');
-alipay_assert(strpos($pluginSource, 'alipayPrivateKeyInput') !== false, 'Alipay private key replacement uses a separate visible input');
-alipay_assert(strpos($pluginSource, 'alipayPublicKeyInput') !== false, 'Alipay public key replacement uses a separate visible input');
+alipay_assert(strpos($pluginSource, 'alipayPrivateKeyInput') !== false, 'Alipay private key uses a visible textarea input');
+alipay_assert(strpos($pluginSource, 'alipayPublicKeyInput') !== false, 'Alipay public key uses a visible textarea input');
 alipay_assert(strpos($pluginSource, 'encryptConfigBackupSecret') !== false, 'Sensitive backup fields are encrypted');
 alipay_assert(strpos($pluginSource, 'decryptConfigBackupSecret') !== false, 'Encrypted backup fields can be restored');
 alipay_assert(strpos($pluginSource, 'storedConfigDefaults') !== false, 'Plugin restores saved config values into the settings form');
@@ -61,9 +63,17 @@ alipay_assert(strpos($pluginSource, 'openapi-sandbox.dl.alipaydev.com/gateway.do
 alipay_assert(strpos($gatewaySource, '$client->gatewayUrl = $this->gatewayUrl();') !== false, 'Alipay client uses configured gateway URL');
 alipay_assert(strpos($gatewaySource, 'function gatewayUrl') !== false, 'Alipay gateway has URL normalization fallback');
 alipay_assert(strpos($gatewaySource, "\$client->gatewayUrl = 'https://openapi.alipay.com/gateway.do';") === false, 'Alipay client no longer hardcodes production gateway');
+alipay_assert(strpos($gatewaySource, 'AlipayKey::body') !== false, 'Alipay gateway strips PEM wrappers before passing keys to the AOP SDK');
+alipay_assert(strpos($gatewaySource, "\$client->postCharset = 'UTF-8';") !== false, 'Alipay gateway sets AOP postCharset like the official demo');
+alipay_assert(strpos($gatewaySource, "\$client->apiVersion = '1.0';") !== false, 'Alipay gateway sets AOP apiVersion like the official demo');
+alipay_assert(strpos($alipayKeySource, 'function body') !== false, 'AlipayKey helper can extract bare key bodies');
+alipay_assert(strpos($alipayKeySource, 'canSignWithSdkBody') !== false, 'AlipayKey helper can diagnose SDK signing compatibility');
+alipay_assert(strpos($diagnosticsSource, '应用私钥 SDK 签名') !== false, 'Diagnostics checks Alipay SDK signing compatibility');
+alipay_assert(strpos($diagnosticsSource, '支付宝公钥 SDK 验签格式') !== false, 'Diagnostics checks Alipay SDK public-key compatibility');
 alipay_assert(strpos($sdkSource, "dirname(__DIR__) . '/vendor/alipaysdk/openapi/v2/aop'") !== false, 'Alipay SDK loader resolves vendor from plugin root');
 alipay_assert(strpos($sdkSource, "dirname(__DIR__, 2) . '/vendor/alipaysdk") === false, 'Alipay SDK loader does not skip past plugin root');
 alipay_assert(strpos($settingsHelpSource, 'openapi-sandbox.dl.alipaydev.com/gateway.do') !== false, 'Settings help documents sandbox gateway URL');
+alipay_assert(strpos($settingsHelpSource, '正常显示在输入框中') !== false, 'Settings help matches visible Alipay key fields');
 
 echo "\n\n--- AlipayGatewayTest ---\n";
 echo "Passed: {$passed}\n";

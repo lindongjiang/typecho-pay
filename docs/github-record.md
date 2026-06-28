@@ -2,6 +2,29 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay AOP Signing Compatibility (v0.4.18)
+
+### Change
+
+Fixed Alipay sandbox `missing-signature` errors caused by the AOP SDK receiving full PEM text in fields that expect bare key bodies.
+
+### Scope
+
+- Kept plugin settings storing and displaying full PEM text for the Alipay application private key and Alipay public key.
+- Converted those PEM values to bare key bodies before assigning `AopClient::$rsaPrivateKey` and `AopClient::$alipayrsaPublicKey`.
+- Added explicit `postCharset` and `apiVersion` AOP client setup to match the official Page Pay PHP demo.
+- Added diagnostics checks for AOP SDK-compatible private-key signing and public-key loading.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay Key Display (v0.4.17)
 
 ### Change

@@ -71,7 +71,7 @@ $returnAlipay = Common::url('/action/typechopay?do=return&gateway=alipay', $opti
                 <li>插件设置中填写 AppID、网关地址、应用私钥、支付宝公钥和可选 Seller ID；AppID 是应用详情里的 APPID，不是绑定商家账号 PID。应用私钥和支付宝公钥直接粘贴文本保存，不需要上传密钥文件。</li>
                 <li>沙箱测试网关：<code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>；正式环境网关：<code>https://openapi.alipay.com/gateway.do</code>。</li>
             </ol>
-            <p><strong>注意：</strong>当前暂不支持支付宝公钥证书模式。请使用普通公钥模式，或后续再扩展证书字段。插件保存设置时会把只粘贴正文的密钥规范化为 PEM 文本；已保存的敏感字段不会明文回显，留空保持旧值。升级或停用再启用时会从加密配置备份恢复。</p>
+            <p><strong>注意：</strong>当前暂不支持支付宝公钥证书模式。请使用普通公钥模式，或后续再扩展证书字段。插件保存设置时会把只粘贴正文的密钥规范化为 PEM 文本；支付宝应用私钥和支付宝公钥会按当前配置正常显示在输入框中。升级或停用再启用时会从加密配置备份恢复。</p>
         </div>
 
         <div class="table-description" style="margin-top:30px;">

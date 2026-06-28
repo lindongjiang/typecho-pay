@@ -5,6 +5,7 @@ namespace TypechoPlugin\TypechoPay\Gateways;
 use TypechoPlugin\TypechoPay\Contracts\GatewayInterface;
 use TypechoPlugin\TypechoPay\Contracts\NotifyResult;
 use TypechoPlugin\TypechoPay\Contracts\PayCreateResult;
+use TypechoPlugin\TypechoPay\Support\AlipayKey;
 use TypechoPlugin\TypechoPay\Support\AlipaySdk;
 use TypechoPlugin\TypechoPay\Support\Money;
 
@@ -128,13 +129,21 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
     private function aopClient()
     {
         AlipaySdk::ensureAop();
+        $privateKeyBody = AlipayKey::body((string) ($this->config['alipayPrivateKey'] ?? ''));
+        $publicKeyBody = AlipayKey::body((string) ($this->config['alipayPublicKey'] ?? ''));
+        if ($privateKeyBody === '' || $publicKeyBody === '') {
+            throw new \InvalidArgumentException('Invalid Alipay key configuration.');
+        }
+
         $client = new \AopClient();
         $client->gatewayUrl = $this->gatewayUrl();
         $client->appId = $this->config['alipayAppId'];
-        $client->rsaPrivateKey = $this->config['alipayPrivateKey'];
-        $client->alipayrsaPublicKey = $this->config['alipayPublicKey'];
+        $client->rsaPrivateKey = $privateKeyBody;
+        $client->alipayrsaPublicKey = $publicKeyBody;
+        $client->apiVersion = '1.0';
         $client->signType = 'RSA2';
         $client->format = 'json';
+        $client->postCharset = 'UTF-8';
         $client->charset = 'UTF-8';
 
         return $client;

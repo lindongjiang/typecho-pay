@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.18 - 2026-06-28
+
+### Alipay signing
+
+- Fixed Alipay Page Pay requests missing the `sign` parameter by passing bare key bodies to the AOP SDK while keeping full PEM text in plugin settings.
+- Added AOP SDK-compatible private-key signing and public-key loading checks to the diagnostics page.
+- Aligned Alipay AOP client setup with the official demo by setting `postCharset` and `apiVersion`.
+
 ## 0.4.17 - 2026-06-28
 
 ### Alipay settings
