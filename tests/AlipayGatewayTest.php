@@ -38,6 +38,9 @@ alipay_assert(strpos($pluginSource, 'alipayPublicKeyInput') !== false, 'Alipay p
 alipay_assert(strpos($pluginSource, 'encryptConfigBackupSecret') !== false, 'Sensitive backup fields are encrypted');
 alipay_assert(strpos($pluginSource, 'decryptConfigBackupSecret') !== false, 'Encrypted backup fields can be restored');
 alipay_assert(strpos($pluginSource, 'storedConfigDefaults') !== false, 'Plugin restores saved config values into the settings form');
+alipay_assert(strpos($pluginSource, "\$settings['alipayAppId'] = trim") !== false, 'Plugin trims Alipay AppID on save');
+alipay_assert(strpos($pluginSource, "\$settings['alipaySellerId'] = trim") !== false, 'Plugin trims Alipay Seller ID on save');
+alipay_assert(strpos($pluginSource, '不能填到 AppID 字段') !== false, 'Plugin settings distinguish AppID from Seller ID/PID');
 alipay_assert(strpos($pluginSource, 'normalizeAlipayPrivateKey') !== false, 'Plugin normalizes Alipay private key PEM text');
 alipay_assert(strpos($pluginSource, 'normalizeAlipayPublicKey') !== false, 'Plugin normalizes Alipay public key PEM text');
 alipay_assert(strpos($pluginSource, '可以直接粘贴完整 PEM') !== false, 'Plugin settings accept pasted full PEM keys');

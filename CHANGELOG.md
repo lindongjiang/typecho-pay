@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.13 - 2026-06-28
+
+### Alipay diagnostics
+
+- Trim Alipay AppID and Seller ID/PID on save and read to avoid invisible whitespace in provider requests.
+- Clarified that Alipay AppID must be the application APPID, while the bound merchant account PID belongs in the optional Seller ID field.
+- Expanded the payment diagnostics page to show the effective AppID, detect AppID/PID mixups, and label the configured Alipay gateway as sandbox or production.
+
 ## 0.4.12 - 2026-06-28
 
 ### Hardening

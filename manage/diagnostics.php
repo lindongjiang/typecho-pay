@@ -47,9 +47,14 @@ $apiV3Key = (string) ($config['wechatApiV3Key'] ?? '');
 $addCheck('微信支付', 'APIv3 Key', strlen($apiV3Key) === 32, $apiV3Key === '' ? '未填写' : (strlen($apiV3Key) === 32 ? '长度为 32 位' : '长度不是 32 位'));
 $addCheck('微信支付', '异步通知 HTTPS', $isHttps($notifyWechat), $notifyWechat);
 
-$addCheck('支付宝', 'AppID', $hasValue($config['alipayAppId'] ?? ''), $hasValue($config['alipayAppId'] ?? '') ? '已填写' : '未填写');
+$alipayAppId = trim((string) ($config['alipayAppId'] ?? ''));
+$alipaySellerId = trim((string) ($config['alipaySellerId'] ?? ''));
+$addCheck('支付宝', 'AppID', $hasValue($alipayAppId), $hasValue($alipayAppId) ? '已填写：' . $alipayAppId : '未填写');
+$addCheck('支付宝', 'AppID 格式', $alipayAppId !== '' && ctype_digit($alipayAppId), $alipayAppId === '' ? '未填写' : 'AppID 应为支付宝应用详情里的数字 APPID');
+$addCheck('支付宝', 'AppID / PID 区分', $alipayAppId === '' || $alipaySellerId === '' || $alipayAppId !== $alipaySellerId, $alipayAppId !== '' && $alipayAppId === $alipaySellerId ? 'AppID 不能填写绑定商家账号 PID/Seller ID' : 'AppID 和 Seller ID 未混用');
 $gatewayUrl = (string) ($config['alipayGatewayUrl'] ?? '');
-$addCheck('支付宝', '网关地址 HTTPS', $gatewayUrl !== '' && $isHttps($gatewayUrl), $gatewayUrl !== '' ? $gatewayUrl : '未填写');
+$gatewayEnv = strpos($gatewayUrl, 'openapi-sandbox') !== false ? '沙箱环境' : '正式环境';
+$addCheck('支付宝', '网关地址 HTTPS', $gatewayUrl !== '' && $isHttps($gatewayUrl), $gatewayUrl !== '' ? $gatewayUrl . '（' . $gatewayEnv . '）' : '未填写');
 $privateKey = (string) ($config['alipayPrivateKey'] ?? '');
 $privateOk = function_exists('openssl_pkey_get_private') && $privateKey !== '' && @openssl_pkey_get_private($privateKey) !== false;
 $addCheck('支付宝', '应用私钥格式', $privateOk, $privateKey === '' ? '未填写' : ($privateOk ? 'OpenSSL 可解析' : 'OpenSSL 无法解析，请确认是应用私钥'));

@@ -34,6 +34,8 @@ oh_assert(strpos($pluginSource, "'paypayApiSecret'") !== false, 'Deprecated PayP
 oh_assert(strpos($pluginSource, 'unset($settings[$key]);') !== false, 'Deprecated settings are removed on save');
 oh_assert(strpos($diagnosticsSource, 'TypechoPay 支付诊断') !== false, 'Diagnostics page has a clear title');
 oh_assert(strpos($diagnosticsSource, '不会输出任何密钥明文') !== false, 'Diagnostics page states it does not expose secrets');
+oh_assert(strpos($diagnosticsSource, 'AppID / PID 区分') !== false, 'Diagnostics page checks AppID and PID are not mixed');
+oh_assert(strpos($diagnosticsSource, 'openapi-sandbox') !== false, 'Diagnostics page identifies sandbox gateway environment');
 oh_assert(strpos($diagnosticsSource, 'wechatpay/wechatpay 可加载') !== false, 'Diagnostics page checks WeChat SDK');
 oh_assert(strpos($diagnosticsSource, 'alipaysdk/openapi 可加载') !== false, 'Diagnostics page checks Alipay SDK');
 oh_assert(strpos($diagnosticsSource, 'openssl_pkey_get_private') !== false, 'Diagnostics page checks Alipay private-key parseability');

@@ -37,7 +37,7 @@ TypechoPay 是一个 Typecho 支付插件，按“订单中心 + 文章商品 + 
 
 - **基础设置**：启用支付方式、入口签名密钥、文章商品卡自动插入位置
 - **微信支付配置**：AppID、商户号、证书序列号、私钥路径、APIv3 Key 等
-- **支付宝配置**：支付模式、AppID、网关地址、应用私钥、支付宝公钥、Seller ID。普通公钥模式的应用私钥和支付宝公钥直接粘贴到插件设置中保存，不需要单独上传密钥文件；已保存的敏感字段不会明文回显，留空保持不变。升级或停用再启用时会尽量从加密配置备份恢复。
+- **支付宝配置**：支付模式、AppID、网关地址、应用私钥、支付宝公钥、Seller ID。AppID 填应用详情里的 APPID，不要填绑定商家账号 PID；普通公钥模式的应用私钥和支付宝公钥直接粘贴到插件设置中保存，不需要单独上传密钥文件；已保存的敏感字段不会明文回显，留空保持不变。升级或停用再启用时会尽量从加密配置备份恢复。
 
 ## 短代码
 
@@ -175,6 +175,7 @@ TypechoPay
 
 - 创建 Page Pay / Precreate 订单依赖官方 `alipaysdk/openapi` 包内的 v2 AOP 类。
 - 当前只支持支付宝普通公钥模式，暂不支持公钥证书模式。插件设置页直接保存应用私钥和支付宝公钥文本，并会把只粘贴正文的密钥规范化为 PEM；保存后设置页只显示“已保存，留空保持不变”，不会明文回显密钥。
+- 沙箱测试必须同时使用沙箱 APPID 和沙箱网关 `https://openapi-sandbox.dl.alipaydev.com/gateway.do`。绑定商家账号 PID 只用于可选 Seller ID 校验，不能填到 AppID 字段。
 - 支付宝网关地址可配置；沙箱测试使用 `https://openapi-sandbox.dl.alipaydev.com/gateway.do`，正式环境使用 `https://openapi.alipay.com/gateway.do`。
 - 异步通知使用 SDK `rsaCheckV1` 验签，并校验 `app_id`、可选 `seller_id`、订单金额和状态。
 - 主动查单使用 `AlipayTradeQueryRequest`。

@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay AppID Diagnostics (v0.4.13)
+
+### Change
+
+Tightened Alipay sandbox configuration checks after the cashier returned `invalid-app-id`.
+
+### Scope
+
+- Trimmed Alipay AppID and Seller ID/PID during save/read so invisible whitespace does not reach AOP requests.
+- Clarified plugin settings text: AppID must be the application APPID, while the bound merchant account PID belongs in optional Seller ID.
+- Expanded `TypechoPay -> 支付诊断` to show the effective AppID, check AppID/PID mixups, and label the gateway as sandbox or production.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Operational Hardening (v0.4.12)
 
 ### Change
