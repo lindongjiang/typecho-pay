@@ -67,6 +67,8 @@ tc_assert(
 tc_assert(strpos($orderServiceSource, 'makePollToken') === false, 'OrderService does not call removed makePollToken');
 tc_assert(strpos($createMethod, 'return_token_hash') === false, 'create() does not clear return token on reuse');
 tc_assert(strpos($orderServiceSource, 'skip_gateway_create') !== false, 'Reusable active orders skip duplicate gateway create');
+tc_assert(strpos($orderServiceSource, '$rows[\'return_token_hash\'] = hash(\'sha256\', $returnToken);') !== false, 'Reusable active orders without payment entry refresh return_token for gateway retry');
+tc_assert(strpos($orderServiceSource, '$existing[\'create_in_progress\'] = true;') !== false, 'Reusable active orders without payment entry can retry gateway creation');
 tc_assert(strpos($orderServiceSource, 'expired_at > ?') !== false, 'Active order reuse requires non-expired order');
 tc_assert(strpos($orderServiceSource, 'product_version = ?') !== false, 'Active order reuse requires same product version');
 tc_assert(strpos($orderServiceSource, 'amount = ?') !== false, 'Active order reuse requires same amount');

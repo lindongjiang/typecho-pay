@@ -165,12 +165,18 @@ final class OrderService
             return $existing;
         }
 
+        $returnToken = $this->makeToken();
+        $rows['return_token_hash'] = hash('sha256', $returnToken);
+        $rows['return_token_expires_at'] = date('Y-m-d H:i:s', time() + self::ORDER_TTL);
+        $rows['return_token_used'] = 0;
         $this->db->query($this->db->update('table.pay_orders')->rows($rows)->where('id = ?', (int) $existing['id']));
         $existing['poll_token'] = $pollToken;
         $existing['delivery_token'] = null;
-        $existing['return_token'] = null;
+        $existing['return_token'] = $returnToken;
+        $existing['return_token_hash'] = $rows['return_token_hash'];
+        $existing['return_token_expires_at'] = $rows['return_token_expires_at'];
+        $existing['return_token_used'] = 0;
         $existing['reused'] = true;
-        $existing['skip_gateway_create'] = true;
         $existing['create_in_progress'] = true;
         return $existing;
     }

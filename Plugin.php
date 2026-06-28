@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.18
+ * @version 0.4.19
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -236,17 +236,7 @@ class Plugin implements PluginInterface
         // 支付宝配置
         // ============================================================
 
-        $alipayMode = new Select(
-            'alipayMode',
-            [
-                'page' => '电脑网站支付（Page Pay）- 用户跳转支付宝页面',
-                'precreate' => '当面付（Precreate）- 生成二维码扫码支付',
-            ],
-            (string) ($savedConfig['alipayMode'] ?? 'page') === 'precreate' ? 'precreate' : 'page',
-            _t('支付宝支付模式'),
-            _t('Page Pay 适合电脑端，会跳转到支付宝收银台；Precreate 适合生成二维码让用户扫码支付。当前仅支持支付宝普通公钥模式，暂不支持公钥证书模式。')
-        );
-        $form->addInput($alipayMode);
+        $form->addInput(new RedactedHiddenField('alipayMode', null, ''));
 
         $form->addInput(new Text('alipayAppId', null, trim((string) ($savedConfig['alipayAppId'] ?? '')), _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。请填写应用 APPID，不要填写绑定商家账号 PID/Seller ID。当前状态：%s。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。', self::configSavedLabel($savedConfig, 'alipayAppId'))));
         $form->addInput(new Text('alipayGatewayUrl', null, self::normalizeAlipayGatewayUrl((string) ($savedConfig['alipayGatewayUrl'] ?? '')), _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
@@ -299,7 +289,7 @@ class Plugin implements PluginInterface
             (string) ($settings['productAutoInjectPosition'] ?? 'top')
         );
         $settings['loadFrontendCss'] = (string) ($settings['loadFrontendCss'] ?? '1') !== '0' ? '1' : '0';
-        $settings['alipayMode'] = (string) ($settings['alipayMode'] ?? 'page') === 'precreate' ? 'precreate' : 'page';
+        $settings['alipayMode'] = 'page';
         $settings['alipayGatewayUrl'] = self::normalizeAlipayGatewayUrl((string) ($settings['alipayGatewayUrl'] ?? ''));
         $settings['alipayAppId'] = trim((string) ($settings['alipayAppId'] ?? ''));
         $settings['alipaySellerId'] = trim((string) ($settings['alipaySellerId'] ?? ''));

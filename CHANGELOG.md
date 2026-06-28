@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.19 - 2026-06-28
+
+### Alipay routing
+
+- Changed Alipay payment routing to use Page Pay on desktop browsers and Wap/H5 Pay on mobile browsers.
+- Removed Precreate QR code payment from the default Alipay browser flow.
+- Refreshed return tokens when retrying reusable active orders that do not yet have a payment entry.
+
 ## 0.4.18 - 2026-06-28
 
 ### Alipay signing

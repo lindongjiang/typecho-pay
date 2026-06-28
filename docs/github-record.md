@@ -2,6 +2,29 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay Browser Routing (v0.4.19)
+
+### Change
+
+Aligned Alipay browser behavior with the desired product flow: desktop browsers use Page Pay and mobile browsers use H5.
+
+### Scope
+
+- Desktop Alipay payment now creates `AlipayTradePagePayRequest` and returns the official Page Pay HTML form.
+- Mobile Alipay payment now creates `AlipayTradeWapPayRequest` and redirects to the H5 payment URL.
+- Precreate QR payment is no longer the default browser flow.
+- Reusable active orders without a saved payment entry now refresh their return token before retrying gateway creation.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay AOP Signing Compatibility (v0.4.18)
 
 ### Change

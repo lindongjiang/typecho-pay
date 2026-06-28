@@ -23,46 +23,13 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         }
 
         $client = $this->aopClient();
-        if ($this->config['alipayMode'] === 'precreate') {
-            AlipaySdk::ensureAop(['AlipayTradePrecreateRequest']);
 
-            $request = new \AlipayTradePrecreateRequest();
-            $request->setNotifyUrl($this->notifyUrl('alipay'));
-            $request->setBizContent(json_encode([
-                'out_trade_no' => $order['out_trade_no'],
-                'total_amount' => Money::cnyFenToYuan((int) $order['amount']),
-                'subject' => $order['subject'],
-            ], JSON_UNESCAPED_UNICODE));
-
-            $response = $client->execute($request);
-            $data = json_decode(json_encode($response), true);
-
-            return new PayCreateResult(
-                'qr',
-                null,
-                $data['alipay_trade_precreate_response']['qr_code'] ?? null,
-                null,
-                is_array($data) ? $data : []
-            );
+        // Mobile browsers use Alipay Wap Pay (H5); desktop browsers use Page Pay.
+        if ($this->isMobileBrowser()) {
+            return $this->createWapPay($client, $order);
         }
 
-        AlipaySdk::ensureAop(['AlipayTradePagePayRequest']);
-
-        $request = new \AlipayTradePagePayRequest();
-        $request->setNotifyUrl($this->notifyUrl('alipay'));
-        $request->setReturnUrl(
-            $this->returnUrl('alipay')
-            . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
-            . '&return_token=' . rawurlencode((string) ($order['return_token'] ?? ''))
-        );
-        $request->setBizContent(json_encode([
-            'out_trade_no' => $order['out_trade_no'],
-            'product_code' => 'FAST_INSTANT_TRADE_PAY',
-            'total_amount' => Money::cnyFenToYuan((int) $order['amount']),
-            'subject' => $order['subject'],
-        ], JSON_UNESCAPED_UNICODE));
-
-        return new PayCreateResult('html', null, null, $client->pageExecute($request, 'POST'), []);
+        return $this->createPagePay($client, $order);
     }
 
     public function notify(array $headers, string $rawBody, array $query, array $post): NotifyResult
@@ -124,6 +91,81 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
             null,
             'active_query'
         );
+    }
+
+    private function createPagePay($client, array $order): PayCreateResult
+    {
+        AlipaySdk::ensureAop(['AlipayTradePagePayRequest']);
+
+        $request = new \AlipayTradePagePayRequest();
+        $request->setNotifyUrl($this->notifyUrl('alipay'));
+        $request->setReturnUrl(
+            $this->returnUrl('alipay')
+            . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
+            . '&return_token=' . rawurlencode((string) ($order['return_token'] ?? ''))
+        );
+        $request->setBizContent(json_encode([
+            'out_trade_no' => $order['out_trade_no'],
+            'product_code' => 'FAST_INSTANT_TRADE_PAY',
+            'total_amount' => Money::cnyFenToYuan((int) $order['amount']),
+            'subject' => $order['subject'],
+        ], JSON_UNESCAPED_UNICODE));
+
+        return new PayCreateResult('html', null, null, $client->pageExecute($request, 'POST'), []);
+    }
+
+    /**
+     * Mobile: H5 Wap Pay — redirect to Alipay mobile page.
+     */
+    private function createWapPay($client, array $order): PayCreateResult
+    {
+        AlipaySdk::ensureAop(['AlipayTradeWapPayRequest']);
+
+        $request = new \AlipayTradeWapPayRequest();
+        $request->setNotifyUrl($this->notifyUrl('alipay'));
+        $request->setReturnUrl(
+            $this->returnUrl('alipay')
+            . '&out_trade_no=' . rawurlencode($order['out_trade_no'])
+            . '&return_token=' . rawurlencode((string) ($order['return_token'] ?? ''))
+        );
+        $request->setBizContent(json_encode([
+            'out_trade_no' => $order['out_trade_no'],
+            'total_amount' => Money::cnyFenToYuan((int) $order['amount']),
+            'subject' => $order['subject'],
+            'product_code' => 'QUICK_WAP_WAY',
+        ], JSON_UNESCAPED_UNICODE));
+
+        $payUrl = $client->pageExecute($request, 'GET');
+
+        return new PayCreateResult(
+            'redirect',
+            is_string($payUrl) ? $payUrl : null,
+            null,
+            null,
+            []
+        );
+    }
+
+    private function isMobileBrowser(): bool
+    {
+        $ua = strtolower((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+        if ($ua === '') {
+            return false;
+        }
+
+        $mobileKeywords = [
+            'mobile', 'android', 'iphone', 'ipod', 'ipad', 'windows phone',
+            'blackberry', 'opera mini', 'opera mobi', 'webos', 'ucbrowser',
+            'micromessenger', 'alipayclient', 'wechat',
+        ];
+
+        foreach ($mobileKeywords as $keyword) {
+            if (strpos($ua, $keyword) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function aopClient()

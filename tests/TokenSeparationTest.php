@@ -64,16 +64,18 @@ tt_assert(preg_match('/^[a-f0-9]{64}$/', 'not-hex-at-all') === 0, 'Invalid retur
 tt_assert(preg_match('/^[a-f0-9]{64}$/', str_repeat('a', 63)) === 0, 'Short return_token fails regex');
 tt_assert(preg_match('/^[a-f0-9]{64}$/', str_repeat('a', 65)) === 0, 'Long return_token fails regex');
 
-// ---- Test 7: Verify AlipayGateway uses return_token not poll_token ----
+// ---- Test 7: Verify Alipay Page/Wap Pay use return_token not poll_token ----
 $alipaySource = file_get_contents($root . '/Gateways/AlipayGateway.php');
 tt_assert(strpos($alipaySource, 'return_token') !== false, 'AlipayGateway references return_token');
 
-$createMethod = '';
-if (preg_match('/public function create\(array \$order\).*?^    \}/ms', $alipaySource, $m)) {
-    $createMethod = $m[0];
+$alipayCreateMethods = '';
+foreach (['createPagePay', 'createWapPay'] as $methodName) {
+    if (preg_match('/private function ' . $methodName . '\(.*?^    \}/ms', $alipaySource, $m)) {
+        $alipayCreateMethods .= "\n" . $m[0];
+    }
 }
-tt_assert(strpos($createMethod, 'poll_token') === false, 'AlipayGateway::create() does NOT use poll_token');
-tt_assert(strpos($createMethod, 'return_token') !== false, 'AlipayGateway::create() uses return_token');
+tt_assert(strpos($alipayCreateMethods, 'poll_token') === false, 'Alipay payment creation does NOT use poll_token');
+tt_assert(substr_count($alipayCreateMethods, 'return_token') >= 2, 'Alipay Page Pay and Wap Pay use return_token');
 
 // ---- Test 8: Verify WeChat Native gateway never sends poll_token upstream ----
 $wechatSource = file_get_contents($root . '/Gateways/WechatNativeGateway.php');
