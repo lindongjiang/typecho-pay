@@ -67,9 +67,17 @@ class Action extends BaseOptions implements ActionInterface
 
             $this->json(['success' => false, 'error' => 'Unknown action.'], 404);
         } catch (\InvalidArgumentException $e) {
+            if (in_array($do, ['prepare', 'create'], true)) {
+                $this->renderPaymentError($e->getMessage());
+                return;
+            }
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
         } catch (\Throwable $e) {
             error_log('[TypechoPay] ' . $e->getMessage());
+            if (in_array($do, ['prepare', 'create'], true)) {
+                $this->renderPaymentError('支付服务暂时不可用，请稍后重试。');
+                return;
+            }
             $this->json(['success' => false, 'error' => 'Payment service is unavailable.'], 500);
         }
     }
@@ -480,6 +488,26 @@ class Action extends BaseOptions implements ActionInterface
             . '<p>订单号：' . htmlspecialchars((string) $order['out_trade_no']) . '</p>'
             . '<p id="typechopay-status">支付平台订单正在创建或确认中，请稍后刷新。</p>'
             . '<p><a href="' . htmlspecialchars($pollUrl) . '">查看订单状态</a></p>'
+            . '</main></body></html>';
+        $this->response->throwContent($html, 'text/html');
+    }
+
+    private function renderPaymentError(string $message): void
+    {
+        $this->setNoStoreHeaders();
+        $returnTo = $this->safeReturnTo((string) $this->request->get('return_to'));
+        $backHtml = $returnTo !== ''
+            ? '<p><a href="' . htmlspecialchars($returnTo) . '">返回文章页面</a></p>'
+            : '<p><button type="button" onclick="history.back()">返回上一页</button></p>';
+        $html = '<!doctype html><html><head><meta charset="utf-8"><title>支付失败</title>'
+            . '<meta name="robots" content="noindex, nofollow">'
+            . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}'
+            . '.box{max-width:640px;padding:24px;border:1px solid #e5e5e5;border-radius:6px;background:#fff}'
+            . '.error{color:#b94a48;padding:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px}'
+            . '</style></head><body><main class="box">'
+            . '<h1>支付失败</h1>'
+            . '<div class="error">' . htmlspecialchars($message) . '</div>'
+            . $backHtml
             . '</main></body></html>';
         $this->response->throwContent($html, 'text/html');
     }

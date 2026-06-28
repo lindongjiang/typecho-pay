@@ -969,13 +969,9 @@ class Plugin implements PluginInterface
             return '';
         }
 
-        $product = self::findProductByContentId($cid);
+        $product = self::findActiveProductByContentId($cid);
         if (!$product) {
-            return self::adminDiagnosticComment('no product found for content_id=' . $cid);
-        }
-
-        if ((string) ($product['status'] ?? '') !== 'active') {
-            return self::adminDiagnosticComment('product paused');
+            return self::adminDiagnosticComment('no active product found for content_id=' . $cid);
         }
 
         $options = Options::alloc();
@@ -1275,13 +1271,9 @@ class Plugin implements PluginInterface
             return $content . self::adminDiagnosticComment('auto inject off');
         }
 
-        $product = self::findProductByContentId($cid);
+        $product = self::findActiveProductByContentId($cid);
         if (!$product) {
-            return $content . self::adminDiagnosticComment('no product found for content_id=' . $cid);
-        }
-
-        if ((string) ($product['status'] ?? '') !== 'active') {
-            return $content . self::adminDiagnosticComment('product paused');
+            return $content . self::adminDiagnosticComment('no active product found for content_id=' . $cid);
         }
 
         $panel = self::renderProductPanelHtml($product, $archive, $options, $config);
