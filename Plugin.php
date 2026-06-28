@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.13
+ * @version 0.4.14
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -111,6 +111,7 @@ class Plugin implements PluginInterface
     public static function activate()
     {
         self::installTables();
+        self::restorePluginConfigFromBackup();
 
         Helper::addAction(self::ACTION, '\\' . __NAMESPACE__ . '\\Action');
         $menuIndex = Helper::addMenu(self::MENU);
@@ -380,6 +381,20 @@ class Plugin implements PluginInterface
             ]));
         } catch (\Throwable $e) {
             error_log('[TypechoPay] Failed to back up plugin config: ' . $e->getMessage());
+        }
+    }
+
+    private static function restorePluginConfigFromBackup(): void
+    {
+        $backup = self::readConfigBackup();
+        if (!$backup) {
+            return;
+        }
+
+        try {
+            \Widget\Plugins\Edit::configPlugin('TypechoPay', self::normalizeConfigSettings($backup));
+        } catch (\Throwable $e) {
+            error_log('[TypechoPay] Failed to restore plugin config backup: ' . $e->getMessage());
         }
     }
 

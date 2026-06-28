@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Disable/Enable Config Restore (v0.4.14)
+
+### Change
+
+Fixed the old Typecho disable/enable path where payment settings could disappear from the plugin settings page after reactivation.
+
+### Scope
+
+- Typecho core deletes `plugin:TypechoPay` when a plugin is disabled.
+- TypechoPay already writes `typechopay_config_backup` before disable; activation now restores that backup into `plugin:TypechoPay` before Typecho renders config defaults.
+- Sensitive values still use redacted replacement inputs in the settings page.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay AppID Diagnostics (v0.4.13)
 
 ### Change

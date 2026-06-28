@@ -30,6 +30,8 @@ alipay_assert(strpos($pluginSource, 'normalizeAlipayGatewayUrl') !== false, 'Plu
 alipay_assert(strpos($pluginSource, 'configHandle(array $settings') !== false, 'Plugin owns config saving for normalization and backup');
 alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_OPTION') !== false, 'Plugin backs up settings across disable/enable update cycles');
 alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_VERSION = 2') !== false, 'Config backup uses versioned format');
+alipay_assert(strpos($pluginSource, 'restorePluginConfigFromBackup') !== false, 'Plugin restores backup during activation');
+alipay_assert(strpos($pluginSource, 'self::restorePluginConfigFromBackup();') !== false, 'Activation restores plugin config before Typecho renders defaults');
 alipay_assert(strpos($pluginSource, 'RedactedHiddenField') !== false, 'Sensitive saved config fields are not rendered back into HTML');
 alipay_assert(strpos($pluginSource, 'endpointSecretInput') !== false, 'Endpoint secret replacement uses a separate visible input');
 alipay_assert(strpos($pluginSource, 'wechatApiV3KeyInput') !== false, 'WeChat APIv3 key replacement uses a separate visible input');

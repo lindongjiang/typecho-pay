@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.14 - 2026-06-28
+
+### Config restore
+
+- Restore `typechopay_config_backup` back into `plugin:TypechoPay` during plugin activation so settings survive Typecho's disable/enable config deletion path.
+
 ## 0.4.13 - 2026-06-28
 
 ### Alipay diagnostics
