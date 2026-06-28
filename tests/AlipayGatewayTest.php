@@ -33,6 +33,8 @@ alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_VERSION = 2') !== false, 'Con
 alipay_assert(strpos($pluginSource, 'restorePluginConfigFromBackup') !== false, 'Plugin restores backup during activation');
 alipay_assert(strpos($pluginSource, 'self::restorePluginConfigFromBackup();') !== false, 'Activation restores plugin config before Typecho renders defaults');
 alipay_assert(strpos($pluginSource, 'RedactedHiddenField') !== false, 'Sensitive saved config fields are not rendered back into HTML');
+alipay_assert(strpos($pluginSource, "new RedactedHiddenField('alipayPrivateKey', null, '')") !== false, 'Redacted hidden fields use Typecho 1.3 constructor signature');
+alipay_assert(strpos($pluginSource, "new RedactedHiddenField('alipayPrivateKey', '')") === false, 'Redacted hidden fields do not pass hidden values as options');
 alipay_assert(strpos($pluginSource, 'endpointSecretInput') !== false, 'Endpoint secret replacement uses a separate visible input');
 alipay_assert(strpos($pluginSource, 'wechatApiV3KeyInput') !== false, 'WeChat APIv3 key replacement uses a separate visible input');
 alipay_assert(strpos($pluginSource, 'alipayPrivateKeyInput') !== false, 'Alipay private key replacement uses a separate visible input');

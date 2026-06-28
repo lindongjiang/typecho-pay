@@ -179,10 +179,10 @@ class Plugin implements PluginInterface
         );
         $form->addInput($enabledGateways);
         foreach (self::DEPRECATED_CONFIG_KEYS as $deprecatedKey) {
-            $form->addInput(new RedactedHiddenField($deprecatedKey, ''));
+            $form->addInput(new RedactedHiddenField($deprecatedKey, null, ''));
         }
 
-        $form->addInput(new RedactedHiddenField('endpointSecret', ''));
+        $form->addInput(new RedactedHiddenField('endpointSecret', null, ''));
         $endpointSaved = !empty($savedConfig['endpointSecret']);
         $endpointSecret = new Password(
             'endpointSecretInput',
@@ -229,7 +229,7 @@ class Plugin implements PluginInterface
         $form->addInput(new Text('wechatPrivateKeyPath', null, (string) ($savedConfig['wechatPrivateKeyPath'] ?? ''), _t('商户 API 私钥文件路径'), _t('下载证书时获得的 <code>apiclient_key.pem</code> 文件的<strong>绝对路径</strong>。<br>建议放在网站根目录外，例如：<code>/www/secure/apiclient_key.pem</code><br>确保 PHP 有读取权限。')));
         $form->addInput(new Text('wechatPlatformPublicKeyPath', null, (string) ($savedConfig['wechatPlatformPublicKeyPath'] ?? ''), _t('微信支付平台公钥/证书路径'), _t('用于回调验签的平台证书文件路径。<br>从微信支付商户平台下载，例如：<code>/www/secure/wechatpay_platform.pem</code>')));
         $form->addInput(new Text('wechatPlatformSerial', null, (string) ($savedConfig['wechatPlatformSerial'] ?? ''), _t('微信支付平台证书序列号/公钥 ID'), _t('在微信支付商户平台 → API 安全 → 平台证书 中查看。')));
-        $form->addInput(new RedactedHiddenField('wechatApiV3Key', ''));
+        $form->addInput(new RedactedHiddenField('wechatApiV3Key', null, ''));
         $form->addInput(new Password('wechatApiV3KeyInput', null, '', _t('微信支付 APIv3 Key'), _t('在微信支付商户平台 → API 安全 中设置的 32 位密钥。%s留空保持不变。<br>用于回调通知的 AES-GCM 解密。<strong>请妥善保管，不要泄露。</strong>', !empty($savedConfig['wechatApiV3Key']) ? '已保存，' : '')));
 
         // ============================================================
@@ -250,9 +250,9 @@ class Plugin implements PluginInterface
 
         $form->addInput(new Text('alipayAppId', null, trim((string) ($savedConfig['alipayAppId'] ?? '')), _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。请填写应用 APPID，不要填写绑定商家账号 PID/Seller ID。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
         $form->addInput(new Text('alipayGatewayUrl', null, self::normalizeAlipayGatewayUrl((string) ($savedConfig['alipayGatewayUrl'] ?? '')), _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
-        $form->addInput(new RedactedHiddenField('alipayPrivateKey', ''));
+        $form->addInput(new RedactedHiddenField('alipayPrivateKey', null, ''));
         $form->addInput(new Textarea('alipayPrivateKeyInput', null, '', _t('支付宝应用私钥'), _t('支付宝开放平台普通公钥模式下生成的应用私钥（RSA2）。可以直接粘贴完整 PEM，也可以粘贴支付宝工具生成的私钥正文，插件会保存为 PEM 文本。%s留空保持不变。<br><strong>这是敏感信息，请勿截图外泄！</strong>', !empty($savedConfig['alipayPrivateKey']) ? '已保存，' : '')));
-        $form->addInput(new RedactedHiddenField('alipayPublicKey', ''));
+        $form->addInput(new RedactedHiddenField('alipayPublicKey', null, ''));
         $form->addInput(new Textarea('alipayPublicKeyInput', null, '', _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签）。可以直接粘贴完整 PEM，也可以粘贴支付宝公钥正文，插件会保存为 PEM 文本。%s留空保持不变。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。', !empty($savedConfig['alipayPublicKey']) ? '已保存，' : '')));
         $form->addInput(new Text('alipaySellerId', null, trim((string) ($savedConfig['alipaySellerId'] ?? '')), _t('支付宝 Seller ID / PID（可选）'), _t('填写后会校验收款账号，提高安全性。这里填绑定的商家账号 PID，不能填到 AppID 字段。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
     }
