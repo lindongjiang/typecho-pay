@@ -65,6 +65,11 @@ ap_assert(strpos($pluginSource, 'HTMLFormElement.prototype.submit.call(form)') !
 ap_assert(strpos($pluginSource, 'form.classList.add(\'submitting\')') !== false, 'Editor import submit avoids beforeunload prompts');
 ap_assert(strpos($pluginSource, '请先粘贴卡密后再提交') !== false, 'Editor import submit guards empty card input');
 ap_assert(strpos($pluginSource, 'min="0.01"') !== false, 'Editor amount input accepts 0.01 yuan minimum');
+ap_assert(strpos($pluginSource, '$amountInputValue') !== false, 'Editor renders a stable amount input value');
+ap_assert(strpos($pluginSource, ": '0.01'") !== false, 'New article editor amount defaults to 0.01 yuan');
+ap_assert(strpos($pluginSource, 'function articleProductAmountFromRequest') !== false, 'Editor save normalizes article product amount');
+ap_assert(substr_count($pluginSource, "articleProductAmountFromRequest(\$widget->request->get('typechopay_amount'))") >= 2, 'Editor save and shortcode insert share article amount normalization');
+ap_assert(strpos($pluginSource, 'return 1;') !== false, 'Blank article editor amount saves as the minimum 1 fen');
 ap_assert(strpos($pluginSource, 'assertCnyYuanAmount') !== false, 'Editor saves yuan input as CNY fen');
 ap_assert(strpos($pluginSource, 'PayPay') === false, 'Plugin config and frontend paths no longer expose PayPay');
 ap_assert(strpos($pluginSource, 'JPY') === false, 'Plugin config and frontend paths no longer expose JPY');

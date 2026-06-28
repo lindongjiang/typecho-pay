@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.21 - 2026-06-28
+
+### Article card editor
+
+- Defaulted new article card products to 0.01 yuan in the editor so selecting card mode no longer saves an empty amount.
+- Normalized blank article-editor amounts to the minimum 1 fen during save and shortcode insertion, keeping the card import flow from aborting before cards are stored.
+
 ## 0.4.20 - 2026-06-28
 
 ### Alipay Page Pay

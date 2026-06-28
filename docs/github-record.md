@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Article Card Save Default (v0.4.21)
+
+### Change
+
+Fixed the article editor card-mode save path so new articles no longer fail when the price field is left at its default state.
+
+### Scope
+
+- New article pay panels now render the amount input as `0.01`.
+- Article product saves treat a blank editor amount as the minimum 1 fen.
+- Shortcode insertion and article product upsert now share the same amount normalization.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay Page Pay HTML Cleanup (v0.4.20)
 
 ### Change

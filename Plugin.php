@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.20
+ * @version 0.4.21
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -544,6 +544,7 @@ class Plugin implements PluginInterface
 
         $title = $product ? (string) ($product['title'] ?? '') : '';
         $amount = $product ? (int) ($product['amount'] ?? 0) : 0;
+        $amountInputValue = $amount > 0 ? Support\Money::formatCnyInput((int) $amount) : '0.01';
         $policy = $product ? (string) ($product['purchase_policy'] ?? 'repeatable') : 'repeatable';
         $maxPerUser = $product ? (int) ($product['max_per_user'] ?? 0) : 0;
         $allowGuest = $product ? (int) ($product['allow_guest'] ?? 1) : 1;
@@ -633,7 +634,7 @@ class Plugin implements PluginInterface
                 <div class="typechopay-editor-grid">
                     <p>
                         <label><?php _e('价格（元）'); ?></label>
-                        <input type="number" name="typechopay_amount" min="0.01" step="0.01" value="<?php echo $amount > 0 ? htmlspecialchars(Support\Money::formatCnyInput((int) $amount)) : ''; ?>" placeholder="<?php _e('最低 0.01'); ?>" class="w-100">
+                        <input type="number" name="typechopay_amount" min="0.01" step="0.01" value="<?php echo htmlspecialchars($amountInputValue); ?>" placeholder="<?php _e('最低 0.01'); ?>" class="w-100">
                     </p>
                     <p>
                         <label><?php _e('购买权限'); ?></label>
@@ -826,7 +827,7 @@ class Plugin implements PluginInterface
         }
 
         try {
-            Support\Money::assertCnyYuanAmount($widget->request->get('typechopay_amount'));
+            self::articleProductAmountFromRequest($widget->request->get('typechopay_amount'));
         } catch (\Throwable $e) {
             return $contents;
         }
@@ -1896,7 +1897,7 @@ class Plugin implements PluginInterface
             throw new \InvalidArgumentException('商品标识已存在，请换一个标识。');
         }
 
-        $amount = Support\Money::assertCnyYuanAmount($widget->request->get('typechopay_amount'));
+        $amount = self::articleProductAmountFromRequest($widget->request->get('typechopay_amount'));
         $currency = 'CNY';
         $policy = strtolower(trim((string) $widget->request->get('typechopay_purchase_policy'))) ?: 'repeatable';
         if (!in_array($policy, ['once', 'repeatable', 'limited'], true)) {
@@ -2026,6 +2027,16 @@ class Plugin implements PluginInterface
             }
             throw $e;
         }
+    }
+
+    private static function articleProductAmountFromRequest($rawAmount): int
+    {
+        $value = trim((string) $rawAmount);
+        if ($value === '') {
+            return 1;
+        }
+
+        return Support\Money::assertCnyYuanAmount($value);
     }
 
     private static function importArticleCardLines(int $productId, $widget): void
