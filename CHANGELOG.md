@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.17 - 2026-06-28
+
+### Alipay settings
+
+- Changed the Alipay application private key and Alipay public key fields to render saved values directly in the plugin settings page.
+- Updated settings copy to clarify that unchanged displayed key values can be saved as-is.
+
 ## 0.4.16 - 2026-06-28
 
 ### Alipay settings

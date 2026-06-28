@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay Key Display (v0.4.17)
+
+### Change
+
+Changed Alipay key settings to show saved values directly in the plugin settings page.
+
+### Scope
+
+- The Alipay application private key textarea now loads the saved private key value.
+- The Alipay public key textarea now loads the saved Alipay public key value.
+- Settings copy now states that unchanged displayed key values can be saved as-is.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay Saved Status Copy (v0.4.16)
 
 ### Change

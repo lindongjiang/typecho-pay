@@ -53,7 +53,9 @@ alipay_assert(strpos($pluginSource, 'normalizeAlipayPublicKey') !== false, 'Plug
 alipay_assert(strpos($pluginSource, '可以直接粘贴完整 PEM') !== false, 'Plugin settings accept pasted full PEM keys');
 alipay_assert(strpos($pluginSource, '插件会保存为 PEM 文本') !== false, 'Plugin settings normalize pasted key bodies to PEM text');
 alipay_assert(strpos($pluginSource, 'configSavedLabel') !== false, 'Plugin settings show saved status for redacted sensitive fields');
-alipay_assert(strpos($pluginSource, '保存后输入框不会回显') !== false, 'Plugin settings explain why saved Alipay keys render blank inputs');
+alipay_assert(strpos($pluginSource, "(string) (\$savedConfig['alipayPrivateKey'] ?? '')") !== false, 'Plugin settings render saved Alipay private key in the textarea');
+alipay_assert(strpos($pluginSource, "(string) (\$savedConfig['alipayPublicKey'] ?? '')") !== false, 'Plugin settings render saved Alipay public key in the textarea');
+alipay_assert(strpos($pluginSource, '已保存的值会正常显示在输入框中') !== false, 'Plugin settings explain that saved Alipay keys are displayed');
 alipay_assert(strpos($pluginSource, '不是应用公钥') !== false, 'Plugin settings distinguish Alipay private/public keys from the app public key');
 alipay_assert(strpos($pluginSource, 'openapi-sandbox.dl.alipaydev.com/gateway.do') !== false, 'Plugin mentions Alipay sandbox gateway URL');
 alipay_assert(strpos($gatewaySource, '$client->gatewayUrl = $this->gatewayUrl();') !== false, 'Alipay client uses configured gateway URL');
