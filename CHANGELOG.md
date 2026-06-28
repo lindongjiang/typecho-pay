@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.15 - 2026-06-28
+
+### Config restore
+
+- Preserved encrypted sensitive config backups when current Typecho plugin settings contain empty redacted fields, preventing Alipay private/public keys from being cleared during disable/enable cycles.
+- Added regression coverage for Alipay text-key storage and backup fallback behavior.
+
 ## 0.4.14 - 2026-06-28
 
 ### Config restore

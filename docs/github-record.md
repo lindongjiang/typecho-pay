@@ -2,6 +2,29 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Sensitive Config Backup Fallback (v0.4.15)
+
+### Change
+
+Prevented empty redacted settings fields from overwriting the encrypted payment-config backup during plugin disable/enable cycles.
+
+### Scope
+
+- Compared the official Alipay Page Pay PHP demo with the plugin's AOP usage; both use config-held AppID, merchant private key, Alipay public key, gateway URL, UTF-8, and RSA2 without separate key-file uploads.
+- Kept Alipay keys as pasteable plugin settings while continuing to hide saved values from the settings HTML.
+- Changed config default loading and backup writing so empty current sensitive fields fall back to the previous encrypted `typechopay_config_backup` values.
+- Added regression checks for the sensitive backup fallback path.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Disable/Enable Config Restore (v0.4.14)
 
 ### Change

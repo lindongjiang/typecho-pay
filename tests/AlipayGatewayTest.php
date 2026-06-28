@@ -32,6 +32,9 @@ alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_OPTION') !== false, 'Plugin b
 alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_VERSION = 2') !== false, 'Config backup uses versioned format');
 alipay_assert(strpos($pluginSource, 'restorePluginConfigFromBackup') !== false, 'Plugin restores backup during activation');
 alipay_assert(strpos($pluginSource, 'self::restorePluginConfigFromBackup();') !== false, 'Activation restores plugin config before Typecho renders defaults');
+alipay_assert(strpos($pluginSource, 'mergeConfigWithSensitiveFallback') !== false, 'Config defaults preserve backed-up sensitive fields when current values are empty');
+alipay_assert(strpos($pluginSource, 'return self::mergeConfigWithSensitiveFallback($backupConfig, $pluginConfig);') !== false, 'Stored config defaults do not let empty plugin rows override sensitive backup fields');
+alipay_assert(strpos($pluginSource, '$settings = self::mergeConfigWithSensitiveFallback(self::readConfigBackup(), $settings);') !== false, 'Config backup writer preserves previous sensitive backup values when new settings are empty');
 alipay_assert(strpos($pluginSource, 'RedactedHiddenField') !== false, 'Sensitive saved config fields are not rendered back into HTML');
 alipay_assert(strpos($pluginSource, "new RedactedHiddenField('alipayPrivateKey', null, '')") !== false, 'Redacted hidden fields use Typecho 1.3 constructor signature');
 alipay_assert(strpos($pluginSource, "new RedactedHiddenField('alipayPrivateKey', '')") === false, 'Redacted hidden fields do not pass hidden values as options');

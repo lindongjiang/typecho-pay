@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.14
+ * @version 0.4.15
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -319,7 +319,26 @@ class Plugin implements PluginInterface
         }
 
         $backupConfig = self::readConfigBackup();
-        return array_merge($backupConfig, $pluginConfig);
+        return self::mergeConfigWithSensitiveFallback($backupConfig, $pluginConfig);
+    }
+
+    private static function mergeConfigWithSensitiveFallback(array $fallback, array $current): array
+    {
+        $merged = array_merge($fallback, $current);
+        foreach (self::SENSITIVE_CONFIG_KEYS as $key) {
+            $currentValue = trim((string) ($current[$key] ?? ''));
+            if ($currentValue !== '') {
+                $merged[$key] = $current[$key];
+                continue;
+            }
+
+            $fallbackValue = trim((string) ($fallback[$key] ?? ''));
+            if ($fallbackValue !== '') {
+                $merged[$key] = $fallback[$key];
+            }
+        }
+
+        return $merged;
     }
 
     private static function configObjectToArray($config): array
@@ -359,6 +378,7 @@ class Plugin implements PluginInterface
     private static function writeConfigBackup(array $settings): void
     {
         try {
+            $settings = self::mergeConfigWithSensitiveFallback(self::readConfigBackup(), $settings);
             $db = Db::get();
             $value = json_encode(self::encodeConfigBackup($settings));
             $exists = $db->fetchRow(
