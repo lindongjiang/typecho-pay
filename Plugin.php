@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.15
+ * @version 0.4.16
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -248,12 +248,12 @@ class Plugin implements PluginInterface
         );
         $form->addInput($alipayMode);
 
-        $form->addInput(new Text('alipayAppId', null, trim((string) ($savedConfig['alipayAppId'] ?? '')), _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。请填写应用 APPID，不要填写绑定商家账号 PID/Seller ID。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
+        $form->addInput(new Text('alipayAppId', null, trim((string) ($savedConfig['alipayAppId'] ?? '')), _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。请填写应用 APPID，不要填写绑定商家账号 PID/Seller ID。当前状态：%s。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。', self::configSavedLabel($savedConfig, 'alipayAppId'))));
         $form->addInput(new Text('alipayGatewayUrl', null, self::normalizeAlipayGatewayUrl((string) ($savedConfig['alipayGatewayUrl'] ?? '')), _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
         $form->addInput(new RedactedHiddenField('alipayPrivateKey', null, ''));
-        $form->addInput(new Textarea('alipayPrivateKeyInput', null, '', _t('支付宝应用私钥'), _t('支付宝开放平台普通公钥模式下生成的应用私钥（RSA2）。可以直接粘贴完整 PEM，也可以粘贴支付宝工具生成的私钥正文，插件会保存为 PEM 文本。%s留空保持不变。<br><strong>这是敏感信息，请勿截图外泄！</strong>', !empty($savedConfig['alipayPrivateKey']) ? '已保存，' : '')));
+        $form->addInput(new Textarea('alipayPrivateKeyInput', null, '', _t('支付宝应用私钥'), _t('这里填写<strong>应用私钥</strong>，不是应用公钥；应用公钥只需要配置到支付宝开放平台。可以直接粘贴完整 PEM，也可以粘贴支付宝工具生成的私钥正文，插件会保存为 PEM 文本。<br>当前状态：%s。保存后输入框不会回显；留空保持不变，重新粘贴才会替换。<br><strong>这是敏感信息，请勿截图外泄！</strong>', self::configSavedLabel($savedConfig, 'alipayPrivateKey'))));
         $form->addInput(new RedactedHiddenField('alipayPublicKey', null, ''));
-        $form->addInput(new Textarea('alipayPublicKeyInput', null, '', _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签）。可以直接粘贴完整 PEM，也可以粘贴支付宝公钥正文，插件会保存为 PEM 文本。%s留空保持不变。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。', !empty($savedConfig['alipayPublicKey']) ? '已保存，' : '')));
+        $form->addInput(new Textarea('alipayPublicKeyInput', null, '', _t('支付宝公钥'), _t('这里填写<strong>支付宝公钥</strong>（用于验签），不是应用公钥；公钥证书模式暂不支持。可以直接粘贴完整 PEM，也可以粘贴支付宝公钥正文，插件会保存为 PEM 文本。<br>当前状态：%s。保存后输入框不会回显；留空保持不变，重新粘贴才会替换。', self::configSavedLabel($savedConfig, 'alipayPublicKey'))));
         $form->addInput(new Text('alipaySellerId', null, trim((string) ($savedConfig['alipaySellerId'] ?? '')), _t('支付宝 Seller ID / PID（可选）'), _t('填写后会校验收款账号，提高安全性。这里填绑定的商家账号 PID，不能填到 AppID 字段。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
     }
 
@@ -353,6 +353,13 @@ class Plugin implements PluginInterface
         }
 
         return $values;
+    }
+
+    private static function configSavedLabel(array $settings, string $key): string
+    {
+        return trim((string) ($settings[$key] ?? '')) !== ''
+            ? '<strong style="color:#2c7a39;">已保存</strong>'
+            : '<strong style="color:#b94a48;">未保存</strong>';
     }
 
     private static function readConfigBackup(): array

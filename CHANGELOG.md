@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.16 - 2026-06-28
+
+### Alipay settings
+
+- Clarified that saved Alipay key textareas intentionally stay blank to avoid rendering private keys into admin HTML.
+- Added explicit saved/unsaved status text for Alipay AppID, application private key, and Alipay public key fields.
+- Clarified that the plugin needs the application private key and Alipay public key; the application public key belongs in the Alipay Open Platform console.
+
 ## 0.4.15 - 2026-06-28
 
 ### Config restore

@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay Saved Status Copy (v0.4.16)
+
+### Change
+
+Made the Alipay settings page clearer when saved key fields are intentionally blank.
+
+### Scope
+
+- Added explicit saved/unsaved status text for Alipay AppID, application private key, and Alipay public key.
+- Clarified that saved Alipay key textareas do not render existing values back into the admin HTML.
+- Clarified that the plugin needs the application private key and Alipay public key; the application public key is only for configuring the Alipay Open Platform.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Sensitive Config Backup Fallback (v0.4.15)
 
 ### Change
