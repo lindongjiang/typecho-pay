@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.19
+ * @version 0.4.20
  * @link https://github.com/
  */
 class Plugin implements PluginInterface

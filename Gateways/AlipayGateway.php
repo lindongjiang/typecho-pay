@@ -186,7 +186,6 @@ final class AlipayGateway extends AbstractGateway implements GatewayInterface
         $client->signType = 'RSA2';
         $client->format = 'json';
         $client->postCharset = 'UTF-8';
-        $client->charset = 'UTF-8';
 
         return $client;
     }

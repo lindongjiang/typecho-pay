@@ -66,6 +66,7 @@ alipay_assert(strpos($gatewaySource, 'function gatewayUrl') !== false, 'Alipay g
 alipay_assert(strpos($gatewaySource, "\$client->gatewayUrl = 'https://openapi.alipay.com/gateway.do';") === false, 'Alipay client no longer hardcodes production gateway');
 alipay_assert(strpos($gatewaySource, 'AlipayKey::body') !== false, 'Alipay gateway strips PEM wrappers before passing keys to the AOP SDK');
 alipay_assert(strpos($gatewaySource, "\$client->postCharset = 'UTF-8';") !== false, 'Alipay gateway sets AOP postCharset like the official demo');
+alipay_assert(strpos($gatewaySource, '$client->charset') === false, 'Alipay gateway does not set unsupported dynamic charset property');
 alipay_assert(strpos($gatewaySource, "\$client->apiVersion = '1.0';") !== false, 'Alipay gateway sets AOP apiVersion like the official demo');
 alipay_assert(strpos($gatewaySource, 'createPagePay') !== false, 'Alipay gateway uses Page Pay for desktop browsers');
 alipay_assert(strpos($gatewaySource, 'AlipayTradePagePayRequest') !== false, 'Alipay gateway loads Page Pay request class');

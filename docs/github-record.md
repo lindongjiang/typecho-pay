@@ -2,6 +2,28 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Alipay Page Pay HTML Cleanup (v0.4.20)
+
+### Change
+
+Cleaned the Alipay Page Pay response so the official auto-submit form is not preceded by PHP 8 deprecated dynamic-property output.
+
+### Scope
+
+- Removed the unsupported `AopClient::$charset` assignment.
+- Kept `AopClient::$postCharset` and `apiVersion` configuration used by the AOP SDK.
+- Added a regression assertion that the gateway does not set the unsupported dynamic `charset` property.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay Browser Routing (v0.4.19)
 
 ### Change

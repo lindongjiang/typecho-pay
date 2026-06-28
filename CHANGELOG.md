@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.20 - 2026-06-28
+
+### Alipay Page Pay
+
+- Removed unsupported `AopClient::$charset` assignment so PHP 8 no longer prints deprecated dynamic-property notices before the Alipay Page Pay form.
+- Added regression coverage for the supported `postCharset` AOP client configuration.
+
 ## 0.4.19 - 2026-06-28
 
 ### Alipay routing
