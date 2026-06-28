@@ -120,7 +120,7 @@ final class CardCodeService
                             'batch_id' => (int) $batchId,
                             'code_ciphertext' => $codeCiphertext,
                             'secret_ciphertext' => $secretCiphertext,
-                            'code_mask' => $this->legacyCodeLabel($item['code']),
+                            'code_mask' => null,
                             'fingerprint' => $fp,
                             'status' => 'available',
                             'reserved_order_id' => null,
@@ -706,16 +706,6 @@ final class CardCodeService
         }
 
         return $existing;
-    }
-
-    private function legacyCodeLabel(string $code): string
-    {
-        $len = function_exists('mb_strlen') ? mb_strlen($code) : strlen($code);
-        if ($len <= 64) {
-            return $code;
-        }
-
-        return (function_exists('mb_substr') ? mb_substr($code, 0, 61) : substr($code, 0, 61)) . '...';
     }
 
     /**

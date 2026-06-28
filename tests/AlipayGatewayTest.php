@@ -29,6 +29,14 @@ alipay_assert(strpos($pluginSource, 'alipayGatewayUrl') !== false, 'Plugin confi
 alipay_assert(strpos($pluginSource, 'normalizeAlipayGatewayUrl') !== false, 'Plugin normalizes Alipay gateway URL');
 alipay_assert(strpos($pluginSource, 'configHandle(array $settings') !== false, 'Plugin owns config saving for normalization and backup');
 alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_OPTION') !== false, 'Plugin backs up settings across disable/enable update cycles');
+alipay_assert(strpos($pluginSource, 'CONFIG_BACKUP_VERSION = 2') !== false, 'Config backup uses versioned format');
+alipay_assert(strpos($pluginSource, 'RedactedHiddenField') !== false, 'Sensitive saved config fields are not rendered back into HTML');
+alipay_assert(strpos($pluginSource, 'endpointSecretInput') !== false, 'Endpoint secret replacement uses a separate visible input');
+alipay_assert(strpos($pluginSource, 'wechatApiV3KeyInput') !== false, 'WeChat APIv3 key replacement uses a separate visible input');
+alipay_assert(strpos($pluginSource, 'alipayPrivateKeyInput') !== false, 'Alipay private key replacement uses a separate visible input');
+alipay_assert(strpos($pluginSource, 'alipayPublicKeyInput') !== false, 'Alipay public key replacement uses a separate visible input');
+alipay_assert(strpos($pluginSource, 'encryptConfigBackupSecret') !== false, 'Sensitive backup fields are encrypted');
+alipay_assert(strpos($pluginSource, 'decryptConfigBackupSecret') !== false, 'Encrypted backup fields can be restored');
 alipay_assert(strpos($pluginSource, 'storedConfigDefaults') !== false, 'Plugin restores saved config values into the settings form');
 alipay_assert(strpos($pluginSource, 'normalizeAlipayPrivateKey') !== false, 'Plugin normalizes Alipay private key PEM text');
 alipay_assert(strpos($pluginSource, 'normalizeAlipayPublicKey') !== false, 'Plugin normalizes Alipay public key PEM text');

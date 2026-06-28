@@ -6,7 +6,9 @@ use Typecho\Common;
 use Typecho\Db;
 use Typecho\Plugin\PluginInterface;
 use Typecho\Widget\Helper\Form;
+use Typecho\Widget\Helper\Form\Element;
 use Typecho\Widget\Helper\Form\Element\Checkbox;
+use Typecho\Widget\Helper\Form\Element\Hidden;
 use Typecho\Widget\Helper\Form\Element\Password;
 use Typecho\Widget\Helper\Form\Element\Select;
 use Typecho\Widget\Helper\Form\Element\Text;
@@ -47,6 +49,16 @@ spl_autoload_register(function ($class) {
     }
 });
 
+final class RedactedHiddenField extends Hidden
+{
+    public function value($value): Element
+    {
+        $this->value = '';
+        $this->inputValue('');
+        return $this;
+    }
+}
+
 /**
  * Typecho Pay
  *
@@ -54,7 +66,7 @@ spl_autoload_register(function ($class) {
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.11
+ * @version 0.4.12
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -65,9 +77,33 @@ class Plugin implements PluginInterface
     private const PRODUCTS_PANEL = 'TypechoPay/manage/products.php';
     private const CARD_INVENTORY_PANEL = 'TypechoPay/manage/card-inventory.php';
     private const CARD_SALES_PANEL = 'TypechoPay/manage/card-sales.php';
+    private const DIAGNOSTICS_PANEL = 'TypechoPay/manage/diagnostics.php';
     private const SETTINGS_HELP_PANEL = 'TypechoPay/manage/settings-help.php';
     private const CONFIG_BACKUP_OPTION = 'typechopay_config_backup';
+    private const CONFIG_BACKUP_VERSION = 2;
     private const SCHEMA_VERSION = 9;
+    private const SENSITIVE_CONFIG_KEYS = [
+        'endpointSecret',
+        'wechatApiV3Key',
+        'alipayPrivateKey',
+        'alipayPublicKey',
+    ];
+    private const SENSITIVE_INPUT_MAP = [
+        'endpointSecretInput' => 'endpointSecret',
+        'wechatApiV3KeyInput' => 'wechatApiV3Key',
+        'alipayPrivateKeyInput' => 'alipayPrivateKey',
+        'alipayPublicKeyInput' => 'alipayPublicKey',
+    ];
+    private const DEPRECATED_CONFIG_KEYS = [
+        'defaultCurrency',
+        'paypayEnvironment',
+        'paypayApiKey',
+        'paypayApiSecret',
+        'paypayMerchantId',
+        '_section_paypay',
+        '_section_wechat',
+        '_section_alipay',
+    ];
 
     /**
      * 启用插件。
@@ -82,6 +118,7 @@ class Plugin implements PluginInterface
         Helper::addPanel($menuIndex, self::PRODUCTS_PANEL, _t('商品管理'), _t('TypechoPay'), 'administrator');
         Helper::addPanel($menuIndex, self::CARD_INVENTORY_PANEL, _t('卡密库存'), _t('TypechoPay'), 'administrator');
         Helper::addPanel($menuIndex, self::CARD_SALES_PANEL, _t('卡密销售'), _t('TypechoPay'), 'administrator');
+        Helper::addPanel($menuIndex, self::DIAGNOSTICS_PANEL, _t('支付诊断'), _t('TypechoPay'), 'administrator');
         Helper::addPanel($menuIndex, self::SETTINGS_HELP_PANEL, _t('支付设置说明'), _t('TypechoPay'), 'administrator');
 
         \Typecho\Plugin::factory('Widget\Base\Contents')->contentEx = __CLASS__ . '::renderPayShortcodes';
@@ -110,6 +147,7 @@ class Plugin implements PluginInterface
         Helper::removePanel($menuIndex, self::PRODUCTS_PANEL);
         Helper::removePanel($menuIndex, self::CARD_INVENTORY_PANEL);
         Helper::removePanel($menuIndex, self::CARD_SALES_PANEL);
+        Helper::removePanel($menuIndex, self::DIAGNOSTICS_PANEL);
         Helper::removePanel($menuIndex, self::SETTINGS_HELP_PANEL);
 
         return _t('TypechoPay 已禁用，订单表会保留以便审计和恢复。');
@@ -139,13 +177,18 @@ class Plugin implements PluginInterface
             _t('当前后台只保留人民币支付方式。未勾选的支付方式不会在前端显示。')
         );
         $form->addInput($enabledGateways);
+        foreach (self::DEPRECATED_CONFIG_KEYS as $deprecatedKey) {
+            $form->addInput(new RedactedHiddenField($deprecatedKey, ''));
+        }
 
+        $form->addInput(new RedactedHiddenField('endpointSecret', ''));
+        $endpointSaved = !empty($savedConfig['endpointSecret']);
         $endpointSecret = new Password(
-            'endpointSecret',
+            'endpointSecretInput',
             null,
-            (string) ($savedConfig['endpointSecret'] ?? ''),
+            '',
             _t('入口签名密钥'),
-            _t('用于文章付款入口金额防篡改。留空时回退到 Typecho 站点 secret。<br><strong>生产环境强烈建议单独设置</strong>，避免与其他功能共用密钥。')
+            _t('用于文章付款入口金额防篡改。%s留空保持不变；未设置时回退到 Typecho 站点 secret。<br><strong>生产环境强烈建议单独设置</strong>，避免与其他功能共用密钥。', $endpointSaved ? '已保存，' : '')
         );
         $form->addInput($endpointSecret);
 
@@ -157,9 +200,9 @@ class Plugin implements PluginInterface
                 'bottom' => '正文底部',
                 'after_first_paragraph' => '第一段之后',
             ],
-            self::normalizeAutoInjectPosition((string) ($savedConfig['productAutoInjectPosition'] ?? 'off')),
+            self::normalizeAutoInjectPosition((string) ($savedConfig['productAutoInjectPosition'] ?? 'top')),
             _t('文章商品卡自动插入位置'),
-            _t('文章 cid 绑定了上架商品时，自动在详情页显示购买模块。若文章只包含 [typechopay_content]，仍会自动插入；只有 [typechopay]、[typechopay_product]、[typechopay_shop] 会阻止重复插入。若文章页不显示卡密商品，请先确认这里不是“不自动插入”。')
+            _t('文章 cid 绑定了上架商品时，默认按绑定关系在详情页显示购买模块；[typechopay_product] 只用于控制正文中的精确位置。若主题不走 contentEx，可在主题里调用 renderArticleProductPanel($this)。')
         );
         $form->addInput($productAutoInjectPosition);
 
@@ -185,7 +228,8 @@ class Plugin implements PluginInterface
         $form->addInput(new Text('wechatPrivateKeyPath', null, (string) ($savedConfig['wechatPrivateKeyPath'] ?? ''), _t('商户 API 私钥文件路径'), _t('下载证书时获得的 <code>apiclient_key.pem</code> 文件的<strong>绝对路径</strong>。<br>建议放在网站根目录外，例如：<code>/www/secure/apiclient_key.pem</code><br>确保 PHP 有读取权限。')));
         $form->addInput(new Text('wechatPlatformPublicKeyPath', null, (string) ($savedConfig['wechatPlatformPublicKeyPath'] ?? ''), _t('微信支付平台公钥/证书路径'), _t('用于回调验签的平台证书文件路径。<br>从微信支付商户平台下载，例如：<code>/www/secure/wechatpay_platform.pem</code>')));
         $form->addInput(new Text('wechatPlatformSerial', null, (string) ($savedConfig['wechatPlatformSerial'] ?? ''), _t('微信支付平台证书序列号/公钥 ID'), _t('在微信支付商户平台 → API 安全 → 平台证书 中查看。')));
-        $form->addInput(new Password('wechatApiV3Key', null, (string) ($savedConfig['wechatApiV3Key'] ?? ''), _t('微信支付 APIv3 Key'), _t('在微信支付商户平台 → API 安全 中设置的 32 位密钥。<br>用于回调通知的 AES-GCM 解密。<strong>请妥善保管，不要泄露。</strong>')));
+        $form->addInput(new RedactedHiddenField('wechatApiV3Key', ''));
+        $form->addInput(new Password('wechatApiV3KeyInput', null, '', _t('微信支付 APIv3 Key'), _t('在微信支付商户平台 → API 安全 中设置的 32 位密钥。%s留空保持不变。<br>用于回调通知的 AES-GCM 解密。<strong>请妥善保管，不要泄露。</strong>', !empty($savedConfig['wechatApiV3Key']) ? '已保存，' : '')));
 
         // ============================================================
         // 支付宝配置
@@ -205,8 +249,10 @@ class Plugin implements PluginInterface
 
         $form->addInput(new Text('alipayAppId', null, (string) ($savedConfig['alipayAppId'] ?? ''), _t('支付宝 AppID'), _t('在 <a href="https://open.alipay.com/" target="_blank">支付宝开放平台</a> → 应用详情 中查看。详细申请和回调配置请查看左侧 TypechoPay → 支付设置说明。')));
         $form->addInput(new Text('alipayGatewayUrl', null, self::normalizeAlipayGatewayUrl((string) ($savedConfig['alipayGatewayUrl'] ?? '')), _t('支付宝网关地址'), _t('正式环境使用 <code>https://openapi.alipay.com/gateway.do</code>；沙箱测试填写 <code>https://openapi-sandbox.dl.alipaydev.com/gateway.do</code>。')));
-        $form->addInput(new Textarea('alipayPrivateKey', null, self::normalizeAlipayPrivateKey((string) ($savedConfig['alipayPrivateKey'] ?? '')), _t('支付宝应用私钥'), _t('支付宝开放平台普通公钥模式下生成的应用私钥（RSA2）。可以直接粘贴完整 PEM，也可以粘贴支付宝工具生成的私钥正文，插件会保存为 PEM 文本。<br><strong>这是敏感信息，请勿截图外泄！</strong>')));
-        $form->addInput(new Textarea('alipayPublicKey', null, self::normalizeAlipayPublicKey((string) ($savedConfig['alipayPublicKey'] ?? '')), _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签）。可以直接粘贴完整 PEM，也可以粘贴支付宝公钥正文，插件会保存为 PEM 文本。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。')));
+        $form->addInput(new RedactedHiddenField('alipayPrivateKey', ''));
+        $form->addInput(new Textarea('alipayPrivateKeyInput', null, '', _t('支付宝应用私钥'), _t('支付宝开放平台普通公钥模式下生成的应用私钥（RSA2）。可以直接粘贴完整 PEM，也可以粘贴支付宝工具生成的私钥正文，插件会保存为 PEM 文本。%s留空保持不变。<br><strong>这是敏感信息，请勿截图外泄！</strong>', !empty($savedConfig['alipayPrivateKey']) ? '已保存，' : '')));
+        $form->addInput(new RedactedHiddenField('alipayPublicKey', ''));
+        $form->addInput(new Textarea('alipayPublicKeyInput', null, '', _t('支付宝公钥'), _t('支付宝开放平台普通公钥模式下生成的支付宝公钥（用于验签）。可以直接粘贴完整 PEM，也可以粘贴支付宝公钥正文，插件会保存为 PEM 文本。%s留空保持不变。<br>注意：这是<strong>支付宝的公钥</strong>，不是应用公钥；公钥证书模式暂不支持。', !empty($savedConfig['alipayPublicKey']) ? '已保存，' : '')));
         $form->addInput(new Text('alipaySellerId', null, (string) ($savedConfig['alipaySellerId'] ?? ''), _t('支付宝 Seller ID（可选）'), _t('填写后会校验收款账号，提高安全性。<br>在支付宝商家中心 → 账户管理 中查看，格式类似：<code>2088xxxxxxxxxxxx</code>')));
     }
 
@@ -229,17 +275,27 @@ class Plugin implements PluginInterface
     private static function normalizeConfigSettings(array $settings): array
     {
         $previous = self::storedConfigDefaults();
-        $secretKeys = ['endpointSecret', 'wechatApiV3Key', 'alipayPrivateKey', 'alipayPublicKey'];
-        foreach ($secretKeys as $key) {
+        foreach (self::SENSITIVE_INPUT_MAP as $inputKey => $configKey) {
+            $replacement = trim((string) ($settings[$inputKey] ?? ''));
+            if ($replacement !== '') {
+                $settings[$configKey] = $replacement;
+            }
+            unset($settings[$inputKey]);
+        }
+
+        foreach (self::SENSITIVE_CONFIG_KEYS as $key) {
             $current = trim((string) ($settings[$key] ?? ''));
             if ($current === '' && !empty($previous[$key])) {
                 $settings[$key] = (string) $previous[$key];
             }
         }
+        foreach (self::DEPRECATED_CONFIG_KEYS as $key) {
+            unset($settings[$key]);
+        }
 
         $settings['enabledGateways'] = self::normalizeGateways($settings['enabledGateways'] ?? ['alipay']) ?: ['alipay'];
         $settings['productAutoInjectPosition'] = self::normalizeAutoInjectPosition(
-            (string) ($settings['productAutoInjectPosition'] ?? 'off')
+            (string) ($settings['productAutoInjectPosition'] ?? 'top')
         );
         $settings['loadFrontendCss'] = (string) ($settings['loadFrontendCss'] ?? '1') !== '0' ? '1' : '0';
         $settings['alipayMode'] = (string) ($settings['alipayMode'] ?? 'page') === 'precreate' ? 'precreate' : 'page';
@@ -287,7 +343,11 @@ class Plugin implements PluginInterface
                     ->limit(1)
             );
             $decoded = $row ? json_decode((string) ($row['value'] ?? ''), true) : null;
-            return is_array($decoded) ? $decoded : [];
+            if (!is_array($decoded)) {
+                return [];
+            }
+
+            return self::decodeConfigBackup($decoded);
         } catch (\Throwable $e) {
             return [];
         }
@@ -297,7 +357,7 @@ class Plugin implements PluginInterface
     {
         try {
             $db = Db::get();
-            $value = json_encode($settings);
+            $value = json_encode(self::encodeConfigBackup($settings));
             $exists = $db->fetchRow(
                 $db->select('name')->from('table.options')
                     ->where('name = ?', self::CONFIG_BACKUP_OPTION)
@@ -319,6 +379,107 @@ class Plugin implements PluginInterface
         } catch (\Throwable $e) {
             error_log('[TypechoPay] Failed to back up plugin config: ' . $e->getMessage());
         }
+    }
+
+    private static function encodeConfigBackup(array $settings): array
+    {
+        $backup = [
+            'version' => self::CONFIG_BACKUP_VERSION,
+            'config' => [],
+            'secrets' => [],
+        ];
+
+        foreach ($settings as $key => $value) {
+            if (in_array($key, self::SENSITIVE_CONFIG_KEYS, true)) {
+                $secret = trim((string) $value);
+                if ($secret !== '') {
+                    $backup['secrets'][$key] = self::encryptConfigBackupSecret($secret);
+                }
+                continue;
+            }
+
+            $backup['config'][$key] = $value;
+        }
+
+        return $backup;
+    }
+
+    private static function decodeConfigBackup(array $decoded): array
+    {
+        if ((int) ($decoded['version'] ?? 0) !== self::CONFIG_BACKUP_VERSION) {
+            return $decoded;
+        }
+
+        $settings = is_array($decoded['config'] ?? null) ? $decoded['config'] : [];
+        $secrets = is_array($decoded['secrets'] ?? null) ? $decoded['secrets'] : [];
+        foreach ($secrets as $key => $ciphertext) {
+            if (!in_array($key, self::SENSITIVE_CONFIG_KEYS, true) || (string) $ciphertext === '') {
+                continue;
+            }
+
+            try {
+                $settings[$key] = self::decryptConfigBackupSecret((string) $ciphertext);
+            } catch (\Throwable $e) {
+                error_log('[TypechoPay] Failed to decrypt backed up config field ' . $key . ': ' . $e->getMessage());
+            }
+        }
+
+        return $settings;
+    }
+
+    private static function encryptConfigBackupSecret(string $plaintext): string
+    {
+        $iv = random_bytes(12);
+        $tag = '';
+        $ciphertext = openssl_encrypt(
+            $plaintext,
+            'aes-256-gcm',
+            self::configBackupKey(),
+            OPENSSL_RAW_DATA,
+            $iv,
+            $tag,
+            'typechopay-config-backup-v1',
+            16
+        );
+
+        if ($ciphertext === false || $tag === '') {
+            throw new \RuntimeException('Failed to encrypt config backup secret.');
+        }
+
+        return 'v1:' . base64_encode($iv . $tag . $ciphertext);
+    }
+
+    private static function decryptConfigBackupSecret(string $encoded): string
+    {
+        if (strpos($encoded, 'v1:') !== 0) {
+            throw new \RuntimeException('Unsupported config backup secret version.');
+        }
+
+        $payload = base64_decode(substr($encoded, 3), true);
+        if ($payload === false || strlen($payload) <= 28) {
+            throw new \RuntimeException('Invalid config backup secret.');
+        }
+
+        $plaintext = openssl_decrypt(
+            substr($payload, 28),
+            'aes-256-gcm',
+            self::configBackupKey(),
+            OPENSSL_RAW_DATA,
+            substr($payload, 0, 12),
+            substr($payload, 12, 16),
+            'typechopay-config-backup-v1'
+        );
+
+        if ($plaintext === false) {
+            throw new \RuntimeException('Failed to decrypt config backup secret.');
+        }
+
+        return $plaintext;
+    }
+
+    private static function configBackupKey(): string
+    {
+        return hash('sha256', 'typechopay-config-backup:' . (string) Options::alloc()->secret, true);
     }
 
     private static function backupPluginConfig(): void
@@ -357,7 +518,7 @@ class Plugin implements PluginInterface
         $coverUrl = $product ? (string) ($product['cover_url'] ?? '') : '';
         $productKey = $product ? (string) ($product['product_key'] ?? '') : '';
         $containsShortcode = is_string($content->text ?? null) && self::containsExplicitProductUiShortcode((string) $content->text);
-        $shouldInsert = !$containsShortcode;
+        $shouldInsert = false;
         $cardStats = ($productId > 0 && $hasCardcode) ? self::articleCardStats($productId) : null;
         $recentCards = ($productId > 0 && $hasCardcode) ? self::recentArticleCards($productId, 8) : [];
 
@@ -854,7 +1015,7 @@ class Plugin implements PluginInterface
             'defaultCurrency' => 'CNY',
             'endpointSecret' => (string) ($plugin->endpointSecret ?? ''),
             'productAutoInjectPosition' => self::normalizeAutoInjectPosition(
-                (string) ($plugin->productAutoInjectPosition ?? 'off')
+                (string) ($plugin->productAutoInjectPosition ?? 'top')
             ),
             'loadFrontendCss' => (string) ($plugin->loadFrontendCss ?? '1') !== '0',
             'wechatAppId' => (string) ($plugin->wechatAppId ?? ''),
@@ -2171,16 +2332,41 @@ class Plugin implements PluginInterface
     private static function tablesAreUsable(Db $db, string $prefix): bool
     {
         try {
-            // Check that pay_orders has the payment_status column (introduced in v2).
             $db->fetchRow(
-                $db->select('payment_status')->from('table.pay_orders')->limit(1)
+                $db->select(
+                    'payment_status',
+                    'return_token_expires_at',
+                    'poll_token_hash',
+                    'delivery_token_hash',
+                    'product_id',
+                    'product_version'
+                )->from('table.pay_orders')->limit(1)
             );
             $db->fetchRow(
-                $db->select('return_token_expires_at')->from('table.pay_orders')->limit(1)
+                $db->select(
+                    'category_id',
+                    'cover_url',
+                    'summary',
+                    'stock_display_mode',
+                    'content_id',
+                    'product_version'
+                )->from('table.pay_products')->limit(1)
             );
-            // Check that pay_card_items table is accessible.
             $db->fetchRow(
-                $db->select('status')->from('table.pay_card_items')->limit(1)
+                $db->select(
+                    'code_ciphertext',
+                    'secret_ciphertext',
+                    'fingerprint',
+                    'status',
+                    'reserved_order_id',
+                    'delivered_order_id'
+                )->from('table.pay_card_items')->limit(1)
+            );
+            $db->fetchRow(
+                $db->select('slug', 'name', 'status')->from('table.pay_product_categories')->limit(1)
+            );
+            $db->fetchRow(
+                $db->select('card_item_id', 'status', 'last_error')->from('table.pay_fulfillments')->limit(1)
             );
             return true;
         } catch (\Throwable $e) {

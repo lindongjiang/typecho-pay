@@ -8,6 +8,11 @@ if (!defined('__TYPECHO_ADMIN__')) {
     exit;
 }
 
+if (!headers_sent()) {
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+}
+
 $db = Db::get();
 $cardService = new CardCodeService($db);
 $panelUrl = $options->adminUrl . 'extending.php?panel=TypechoPay%2Fmanage%2Fcard-sales.php';

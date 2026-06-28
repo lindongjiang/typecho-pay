@@ -101,6 +101,12 @@ tc_assert(
     'Migration backfills paid_pending_grant'
 );
 tc_assert(strpos($pluginSource, 'function tablesAreUsable') !== false, 'Migration has tablesAreUsable check');
+tc_assert(strpos($pluginSource, "'category_id'") !== false, 'Schema usability checks product category column');
+tc_assert(strpos($pluginSource, "'cover_url'") !== false, 'Schema usability checks product cover column');
+tc_assert(strpos($pluginSource, "'code_ciphertext'") !== false, 'Schema usability checks card ciphertext column');
+tc_assert(strpos($pluginSource, "'fingerprint'") !== false, 'Schema usability checks card fingerprint column');
+tc_assert(strpos($pluginSource, 'table.pay_product_categories') !== false, 'Schema usability checks product categories table');
+tc_assert(strpos($pluginSource, "'last_error'") !== false, 'Schema usability checks fulfillment error column');
 
 // ---- Test 7: syncProviderStatus releases AFTER update ----
 $updateComment = strpos($orderServiceSource, 'Only release card reservations if the transition succeeds');

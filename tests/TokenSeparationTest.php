@@ -34,7 +34,7 @@ function tt_assert(bool $condition, string $label): void
 
 // ---- Test 1: Signer still works with the new payload format ----
 $secret = 'test-secret-key-for-tokens';
-$payload = ['product_id' => '42', 'return_to' => 'https://example.com/post/1', 'gateway' => 'paypay'];
+$payload = ['product_id' => '42', 'return_to' => 'https://example.com/post/1', 'gateway' => 'alipay'];
 $signature = Signer::sign($payload, $secret);
 tt_assert(Signer::verify($payload, $secret, $signature), 'Signer::sign/verify works with product payload');
 
@@ -64,18 +64,7 @@ tt_assert(preg_match('/^[a-f0-9]{64}$/', 'not-hex-at-all') === 0, 'Invalid retur
 tt_assert(preg_match('/^[a-f0-9]{64}$/', str_repeat('a', 63)) === 0, 'Short return_token fails regex');
 tt_assert(preg_match('/^[a-f0-9]{64}$/', str_repeat('a', 65)) === 0, 'Long return_token fails regex');
 
-// ---- Test 7: Verify PayPayGateway uses return_token not poll_token ----
-$paypaySource = file_get_contents($root . '/Gateways/PayPayGateway.php');
-tt_assert(strpos($paypaySource, 'return_token') !== false, 'PayPayGateway references return_token');
-
-$createMethod = '';
-if (preg_match('/public function create\(array \$order\).*?^    \}/ms', $paypaySource, $m)) {
-    $createMethod = $m[0];
-}
-tt_assert(strpos($createMethod, 'poll_token') === false, 'PayPayGateway::create() does NOT use poll_token');
-tt_assert(strpos($createMethod, 'return_token') !== false, 'PayPayGateway::create() uses return_token');
-
-// ---- Test 8: Verify AlipayGateway uses return_token not poll_token ----
+// ---- Test 7: Verify AlipayGateway uses return_token not poll_token ----
 $alipaySource = file_get_contents($root . '/Gateways/AlipayGateway.php');
 tt_assert(strpos($alipaySource, 'return_token') !== false, 'AlipayGateway references return_token');
 
@@ -85,6 +74,15 @@ if (preg_match('/public function create\(array \$order\).*?^    \}/ms', $alipayS
 }
 tt_assert(strpos($createMethod, 'poll_token') === false, 'AlipayGateway::create() does NOT use poll_token');
 tt_assert(strpos($createMethod, 'return_token') !== false, 'AlipayGateway::create() uses return_token');
+
+// ---- Test 8: Verify WeChat Native gateway never sends poll_token upstream ----
+$wechatSource = file_get_contents($root . '/Gateways/WechatNativeGateway.php');
+
+$createMethod = '';
+if (preg_match('/public function create\(array \$order\).*?^    \}/ms', $wechatSource, $m)) {
+    $createMethod = $m[0];
+}
+tt_assert(strpos($createMethod, 'poll_token') === false, 'WechatNativeGateway::create() does NOT use poll_token');
 
 // ---- Test 9: Verify OrderService has all three token methods ----
 $orderServiceSource = file_get_contents($root . '/Services/OrderService.php');

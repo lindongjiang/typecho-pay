@@ -76,6 +76,8 @@ class Action extends BaseOptions implements ActionInterface
 
     private function create(): void
     {
+        // Legacy endpoint for signed one-time payloads before v0.3.
+        // New frontend entry points should use do=prepare.
         if (!$this->request->isPost()) {
             throw new \InvalidArgumentException('Payment order must be created by POST.');
         }

@@ -2,6 +2,36 @@
 
 Date: 2026-06-25
 
+## 2026-06-28 Operational Hardening (v0.4.12)
+
+### Change
+
+Reduced secret exposure, cleaned up inactive gateway paths, and added operator diagnostics before the next live payment test.
+
+### Scope
+
+- Reworked sensitive settings into redacted stored fields plus separate replacement inputs so Typecho's config form does not echo saved secrets back into HTML.
+- Changed `typechopay_config_backup` to a versioned format with AES-GCM encrypted sensitive values.
+- Stopped writing card-code text into the legacy `code_mask` column on new imports.
+- Added no-store cache headers to card inventory and card sales admin pages.
+- Added `TypechoPay -> 支付诊断` for PHP extension, SDK loading, HTTPS callback, certificate-path, and Alipay key format checks.
+- Removed the legacy PayPay gateway adapter from the source tree and CI tests while keeping the current mainline focused on WeChat Pay and Alipay CNY flows.
+- Marked `do=create` as a legacy endpoint and kept `do=prepare` as the frontend path.
+- Added hidden upgrade shims for old `defaultCurrency`, PayPay, and `_section_*` settings so legacy saved config can open and then be cleaned on save.
+- Expanded `tablesAreUsable()` to cover v9 runtime-critical product, card, category, fulfillment, and token columns.
+- Changed the article editor so it does not default to writing `[typechopay_product]` into the article body; binding and explicit insertion remain separate.
+- Expanded CI to PHP 7.4, 8.0, and 8.2.
+
+### Verification
+
+Run after pulling this change:
+
+```sh
+composer validate --no-check-lock --strict
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+for test in tests/*Test.php; do php "$test"; done
+```
+
 ## 2026-06-28 Alipay Settings and Full Card Display (v0.4.11)
 
 ### Change

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.4.12 - 2026-06-28
+
+### Hardening
+
+- Sensitive plugin settings now use separate replacement inputs; saved endpoint, WeChat APIv3, Alipay private-key, and Alipay public-key values are no longer rendered back into the settings HTML.
+- Config backup format now encrypts sensitive fields with a site-secret-derived AES-GCM key while keeping disable/enable recovery.
+- New card-code imports no longer write card text into the legacy `code_mask` column.
+- Card inventory and card sales admin pages now send `Cache-Control: no-store`.
+
+### Operations
+
+- Added a `支付诊断` admin page for PHP extensions, Composer SDK loading, HTTPS notify URLs, WeChat certificate path readability, and Alipay key parseability.
+- Removed the legacy PayPay gateway adapter from the source tree and CI tests; the current mainline supports WeChat Pay and Alipay CNY flows.
+- Marked `do=create` as a legacy signed-entry endpoint; new frontend entry points continue to use `do=prepare`.
+- Added hidden upgrade shims for old `defaultCurrency`, PayPay, and `_section_*` settings so legacy saved config can be opened once and cleaned on save.
+- Expanded schema usability checks for product, card item, category, fulfillment, and token columns.
+- CI now runs on PHP 7.4, 8.0, and 8.2.
+
+### Article editor
+
+- Article binding and body insertion are now separated: the editor no longer defaults to writing `[typechopay_product]` into the article body, while the explicit insert controls remain available.
+
 ## 0.4.11 - 2026-06-28
 
 ### Alipay settings
