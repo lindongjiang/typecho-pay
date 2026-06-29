@@ -970,9 +970,13 @@ class Plugin implements PluginInterface
             return '';
         }
 
-        $product = self::findActiveProductByContentId($cid);
+        $product = self::findProductByContentId($cid);
         if (!$product) {
-            return self::adminDiagnosticComment('no active product found for content_id=' . $cid);
+            return self::adminDiagnosticComment('no product found for content_id=' . $cid);
+        }
+
+        if ((string) ($product['status'] ?? '') !== 'active') {
+            return self::adminDiagnosticComment('product paused');
         }
 
         $options = Options::alloc();
@@ -1272,9 +1276,13 @@ class Plugin implements PluginInterface
             return $content . self::adminDiagnosticComment('auto inject off');
         }
 
-        $product = self::findActiveProductByContentId($cid);
+        $product = self::findProductByContentId($cid);
         if (!$product) {
-            return $content . self::adminDiagnosticComment('no active product found for content_id=' . $cid);
+            return $content . self::adminDiagnosticComment('no product found for content_id=' . $cid);
+        }
+
+        if ((string) ($product['status'] ?? '') !== 'active') {
+            return $content . self::adminDiagnosticComment('product paused');
         }
 
         $panel = self::renderProductPanelHtml($product, $archive, $options, $config);

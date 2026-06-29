@@ -11,6 +11,7 @@
 
 ### Maintenance
 
+- Restored admin-only article product diagnostics for missing and paused bound products.
 - Removed the unused non-atomic return-token verifier and unused fulfillment handler contract.
 - Reworked card stock counting to use the Typecho query builder.
 - Replaced theme-template `extract()` usage with an isolated renderer.
