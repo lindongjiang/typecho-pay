@@ -2,6 +2,17 @@
 
 Date: 2026-06-25
 
+## 2026-06-29 Article Product Visibility Default (v0.4.22)
+
+### Change
+
+Made card-code article products safer to publish when global auto-injection is disabled.
+
+### Scope
+
+- The article editor now defaults the "insert purchase module" checkbox to enabled when the article is in paid-reading or card-code mode, no TypechoPay purchase shortcode exists, and the global product auto-injection setting is off.
+- This keeps the operator workflow simple: selecting card-code mode and saving the article produces a visible frontend purchase module.
+
 ## 2026-06-28 Article Card Save Default (v0.4.21)
 
 ### Change

@@ -109,7 +109,7 @@ ap_assert(strpos($pluginSource, '商品状态') !== false, 'Editor shows product
 ap_assert(strpos($pluginSource, '当前库存') !== false, 'Editor shows current stock summary');
 ap_assert(strpos($pluginSource, '自动插入') !== false, 'Editor shows auto-insert status');
 ap_assert(strpos($pluginSource, '前台显示') !== false, 'Editor shows frontend visibility status');
-ap_assert(strpos($pluginSource, '$shouldInsert = false') !== false, 'Editor does not default to writing product shortcode into content');
+ap_assert(strpos($pluginSource, "\$config['productAutoInjectPosition'] === 'off'") !== false, 'Editor defaults to shortcode insertion when global auto-injection is off');
 ap_assert(strpos($pluginSource, '保存时在正文顶部插入购买模块') !== false, 'Editor still offers explicit shortcode insertion on save');
 ap_assert(strpos($pluginSource, '插入购买模块到光标') !== false, 'Editor can insert the product shortcode at cursor');
 ap_assert(strpos($pluginSource, '查看前台') !== false, 'Editor links to frontend preview');

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.22 - 2026-06-29
+
+### Article product display
+
+- Defaulted the article editor shortcode insertion checkbox to enabled when global product auto-injection is off, so saved card-code articles still get a visible frontend purchase module.
+
 ## 0.4.21 - 2026-06-28
 
 ### Article card editor

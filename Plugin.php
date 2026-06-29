@@ -66,7 +66,7 @@ final class RedactedHiddenField extends Hidden
  *
  * @package TypechoPay
  * @author mantou
- * @version 0.4.21
+ * @version 0.4.22
  * @link https://github.com/
  */
 class Plugin implements PluginInterface
@@ -552,13 +552,14 @@ class Plugin implements PluginInterface
         $summary = $product ? (string) ($product['summary'] ?? '') : '';
         $coverUrl = $product ? (string) ($product['cover_url'] ?? '') : '';
         $productKey = $product ? (string) ($product['product_key'] ?? '') : '';
-        $containsShortcode = is_string($content->text ?? null) && self::containsExplicitProductUiShortcode((string) $content->text);
-        $shouldInsert = false;
-        $cardStats = ($productId > 0 && $hasCardcode) ? self::articleCardStats($productId) : null;
-        $recentCards = ($productId > 0 && $hasCardcode) ? self::recentArticleCards($productId, 8) : [];
-
         $options = Options::alloc();
         $config = self::pluginConfig($options);
+        $containsShortcode = is_string($content->text ?? null) && self::containsExplicitProductUiShortcode((string) $content->text);
+        $shouldInsert = !$containsShortcode
+            && in_array($mode, ['post_access', 'cardcode'], true)
+            && $config['productAutoInjectPosition'] === 'off';
+        $cardStats = ($productId > 0 && $hasCardcode) ? self::articleCardStats($productId) : null;
+        $recentCards = ($productId > 0 && $hasCardcode) ? self::recentArticleCards($productId, 8) : [];
         $autoInjectLabel = [
             'off' => _t('关闭'),
             'top' => _t('正文顶部'),
