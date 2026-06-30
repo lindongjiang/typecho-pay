@@ -24,7 +24,7 @@ final class CardDeliveryPage
             . '<style>' . self::style() . '</style>'
             . '</head><body><main class="typechopay-delivery">'
             . '<section class="typechopay-delivery__hero">'
-            . '<div><p class="typechopay-delivery__eyebrow">TypechoPay</p>'
+            . '<div><p class="typechopay-delivery__eyebrow">卡密交付</p>'
             . '<h1>' . self::e($title) . '</h1>'
             . '<p class="typechopay-delivery__lead">' . self::e($lead) . '</p></div>'
             . '<span class="typechopay-delivery__status">' . self::e((string) ($order['status'] ?? 'unknown')) . '</span>'
@@ -108,17 +108,18 @@ final class CardDeliveryPage
         return <<<'CSS'
 :root {
     color-scheme: light dark;
-    --tp-bg: #f5f5f7;
-    --tp-panel: rgba(255, 255, 255, 0.84);
-    --tp-panel-strong: rgba(255, 255, 255, 0.96);
-    --tp-text: #1d1d1f;
-    --tp-muted: #6e6e73;
-    --tp-line: rgba(60, 60, 67, 0.16);
-    --tp-accent: #007aff;
-    --tp-accent-strong: #0064d2;
-    --tp-code: rgba(118, 118, 128, 0.1);
-    --tp-ok: #248a3d;
-    --tp-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
+    --tp-bg: #f7f7f3;
+    --tp-panel: #fffdf8;
+    --tp-panel-strong: #f0f2ed;
+    --tp-text: #20211d;
+    --tp-muted: #676a61;
+    --tp-line: rgba(42, 45, 39, 0.16);
+    --tp-accent: #3f6f5b;
+    --tp-accent-strong: #2e5747;
+    --tp-warm: #a7652a;
+    --tp-code: #f2f4ee;
+    --tp-ok: #3f7d5a;
+    --tp-shadow: 0 10px 28px rgba(32, 33, 29, 0.08);
 }
 
 * {
@@ -146,10 +147,8 @@ body {
 .typechopay-delivery__card,
 .typechopay-delivery__empty {
     border: 1px solid var(--tp-line);
-    border-radius: 22px;
+    border-radius: 8px;
     background: var(--tp-panel);
-    -webkit-backdrop-filter: saturate(180%) blur(22px);
-    backdrop-filter: saturate(180%) blur(22px);
     box-shadow: var(--tp-shadow);
 }
 
@@ -158,6 +157,7 @@ body {
     align-items: flex-start;
     justify-content: space-between;
     gap: 24px;
+    border-left: 4px solid var(--tp-accent);
     padding: 30px;
 }
 
@@ -186,30 +186,27 @@ body {
 
 .typechopay-delivery__status {
     flex: 0 0 auto;
-    border: 1px solid rgba(52, 199, 89, 0.28);
+    border: 1px solid rgba(63, 125, 90, 0.3);
     border-radius: 999px;
     padding: 5px 11px;
     color: var(--tp-ok);
-    background: rgba(52, 199, 89, 0.12);
+    background: rgba(63, 125, 90, 0.1);
     font-size: 13px;
     font-weight: 750;
 }
 
 .typechopay-delivery__meta {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1px;
     margin-top: 16px;
     overflow: hidden;
+    background: var(--tp-line);
 }
 
 .typechopay-delivery__meta div {
     padding: 16px 18px;
-    border-right: 1px solid var(--tp-line);
-}
-
-.typechopay-delivery__meta div:last-child {
-    border-right: 0;
+    background: var(--tp-panel);
 }
 
 .typechopay-delivery__meta dt {
@@ -232,6 +229,7 @@ body {
 
 .typechopay-delivery__card {
     padding: 20px;
+    border-left: 4px solid var(--tp-warm);
 }
 
 .typechopay-delivery__card header {
@@ -272,9 +270,9 @@ body {
 .typechopay-delivery__credential button,
 .typechopay-delivery__actions a {
     border: 1px solid var(--tp-accent);
-    border-radius: 12px;
+    border-radius: 8px;
     background: var(--tp-accent);
-    color: #fff;
+    color: #fffdf8;
     cursor: pointer;
     font: inherit;
     font-size: 13px;
@@ -298,7 +296,7 @@ body {
     margin: 0;
     padding: 13px 14px;
     border: 1px solid var(--tp-line);
-    border-radius: 14px;
+    border-radius: 8px;
     background: var(--tp-code);
     color: var(--tp-text);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -337,16 +335,17 @@ body {
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --tp-bg: #0f0f10;
-        --tp-panel: rgba(28, 28, 30, 0.84);
-        --tp-panel-strong: rgba(28, 28, 30, 0.96);
-        --tp-text: #f5f5f7;
-        --tp-muted: #a1a1a6;
-        --tp-line: rgba(255, 255, 255, 0.14);
-        --tp-accent: #0a84ff;
-        --tp-accent-strong: #409cff;
-        --tp-code: rgba(120, 120, 128, 0.24);
-        --tp-ok: #30d158;
+        --tp-bg: #11130f;
+        --tp-panel: #191c17;
+        --tp-panel-strong: #22261f;
+        --tp-text: #f1f2ec;
+        --tp-muted: #a8aa9f;
+        --tp-line: rgba(241, 242, 236, 0.14);
+        --tp-accent: #78aa8f;
+        --tp-accent-strong: #91bea6;
+        --tp-warm: #d39a5a;
+        --tp-code: #0b100d;
+        --tp-ok: #86bd9b;
         --tp-shadow: none;
     }
 }
@@ -371,19 +370,6 @@ body {
         margin-top: 16px;
     }
 
-    .typechopay-delivery__meta {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .typechopay-delivery__meta div {
-        border-right: 0;
-        border-bottom: 1px solid var(--tp-line);
-    }
-
-    .typechopay-delivery__meta div:nth-last-child(-n+2) {
-        border-bottom: 0;
-    }
-
     .typechopay-delivery__card {
         padding: 16px;
     }
@@ -403,23 +389,8 @@ body {
 }
 
 @media (max-width: 460px) {
-    .typechopay-delivery__hero,
-    .typechopay-delivery__meta,
-    .typechopay-delivery__card,
-    .typechopay-delivery__empty {
-        border-radius: 18px;
-    }
-
     .typechopay-delivery__meta {
         grid-template-columns: 1fr;
-    }
-
-    .typechopay-delivery__meta div {
-        border-bottom: 1px solid var(--tp-line);
-    }
-
-    .typechopay-delivery__meta div:last-child {
-        border-bottom: 0;
     }
 
     .typechopay-delivery__credential-head {
