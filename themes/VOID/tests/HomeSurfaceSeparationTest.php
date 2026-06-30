@@ -42,6 +42,10 @@ hsst_assert(strpos($payCss, '.typechopay-card__price') !== false, 'TypechoPay CS
 hsst_assert(strpos($payCss, '.typechopay-card__buy') !== false, 'TypechoPay CSS styles product card action');
 hsst_assert(strpos($payCss, '.typechopay-card__detail-link') !== false, 'TypechoPay CSS styles product detail entry');
 hsst_assert(strpos($payCss, '.typechopay-card__title-link') !== false, 'TypechoPay CSS styles linked product titles');
+hsst_assert(strpos($payCss, '--typechopay-void-action') !== false, 'TypechoPay CSS exposes a product purchase action color');
+hsst_assert(strpos($payCss, '.typechopay-product-panel__trust') !== false, 'TypechoPay CSS styles product purchase assurance hints');
+hsst_assert(strpos($payCss, '.yue .product-intro') !== false, 'TypechoPay CSS styles product intro content blocks');
+hsst_assert(strpos($payCss, '.yue .product-notice') !== false, 'TypechoPay CSS styles product notice content blocks');
 
 echo "\n\n--- HomeSurfaceSeparationTest ---\n";
 echo "Passed: {$passed}\n";

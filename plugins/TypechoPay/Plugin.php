@@ -1328,6 +1328,7 @@ class Plugin implements PluginInterface
         $currency = (string) ($product['currency'] ?? 'CNY');
         $amount = (int) $product['amount'];
         $title = (string) ($product['title'] ?? _t('自动售卡'));
+        $panelTitle = self::productPanelTitle($title, $archive, $product);
         $summary = trim((string) ($product['summary'] ?? ''));
         if ($summary === '') {
             $summary = _t('此内容为自动售卡，请付款后获取卡密信息。');
@@ -1358,12 +1359,17 @@ class Plugin implements PluginInterface
             'typechopay-product-panel__buy',
             $state
         );
+        $trustHtml = '<div class="typechopay-product-panel__trust" aria-label="' . htmlspecialchars(_t('购买保障')) . '">'
+            . '<span>' . htmlspecialchars(_t('自动发卡')) . '</span>'
+            . '<span>' . htmlspecialchars(_t('支付后可查看')) . '</span>'
+            . '<span>' . htmlspecialchars(_t('订单可追踪')) . '</span>'
+            . '</div>';
 
         return $css . '<section class="' . $panelClass . '" data-product-id="' . $pid . '">'
             . $coverHtml
             . '<div class="typechopay-product-panel__main">'
             . '<div class="typechopay-product-panel__label">' . htmlspecialchars($typeLabel) . '</div>'
-            . '<div class="typechopay-product-panel__title" role="heading" aria-level="2">' . htmlspecialchars($title) . '</div>'
+            . '<div class="typechopay-product-panel__title" role="heading" aria-level="2">' . htmlspecialchars($panelTitle) . '</div>'
             . '<p class="typechopay-product-panel__desc">' . htmlspecialchars($summary) . '</p>'
             . '<div class="typechopay-product-panel__meta">'
             . '<span class="typechopay-product-panel__price">' . htmlspecialchars(Support\Money::formatForDisplay($amount, $currency)) . '</span>'
@@ -1371,9 +1377,28 @@ class Plugin implements PluginInterface
             . $stockHtml
             . '</div>'
             . '<div class="typechopay-product-panel__actions">' . $actions . '</div>'
+            . $trustHtml
             . '</div>'
             . '</section>'
             . self::productPanelDiagnosticComments($product, $stats, $state, $config);
+    }
+
+    private static function productPanelTitle(string $title, $archive, array $product): string
+    {
+        $archiveTitle = '';
+        try {
+            $archiveTitle = is_object($archive) ? trim((string) ($archive->title ?? '')) : '';
+        } catch (\Throwable $e) {
+            $archiveTitle = '';
+        }
+
+        if ($archiveTitle !== '' && trim($title) === $archiveTitle) {
+            return ((string) ($product['stock_policy'] ?? 'none') === 'reserve_on_order')
+                ? _t('购买卡密')
+                : _t('购买内容');
+        }
+
+        return $title;
     }
 
     /**
@@ -1938,7 +1963,11 @@ class Plugin implements PluginInterface
         }
 
         $action = Common::url('/action/' . self::ACTION . '?do=prepare', $options->index);
-        $labels = ['wechat' => '微信支付', 'alipay' => '支付宝'];
+        $labels = ['wechat' => '微信支付', 'alipay' => '支付宝支付'];
+        $amountText = Support\Money::formatForDisplay(
+            (int) ($product['amount'] ?? 0),
+            (string) ($product['currency'] ?? 'CNY')
+        );
         $buttons = [];
         foreach ($state['gateways'] as $gateway) {
             $payload = [
@@ -1956,7 +1985,7 @@ class Plugin implements PluginInterface
             $buttons[] = '<form method="post" action="' . htmlspecialchars($action) . '" class="typechopay-form">'
                 . $fields
                 . '<button type="submit" class="' . htmlspecialchars($buttonClass) . '">'
-                . htmlspecialchars($labels[$gateway] ?? $gateway)
+                . htmlspecialchars(($labels[$gateway] ?? $gateway) . ' · ' . $amountText)
                 . '</button></form>';
         }
 

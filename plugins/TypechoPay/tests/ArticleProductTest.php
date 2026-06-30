@@ -36,6 +36,7 @@ ap_assert(strpos($pluginSource, 'function autoInjectProductPanel') !== false, 'P
 ap_assert(strpos($pluginSource, 'function containsExplicitProductUiShortcode') !== false, 'Auto inject ignores protected-content-only shortcodes');
 ap_assert(strpos($pluginSource, 'function findActiveProductByContentId') !== false, 'Plugin can find product by article cid');
 ap_assert(strpos($pluginSource, 'function renderProductPanelHtml') !== false, 'Plugin renders article product panel');
+ap_assert(strpos($pluginSource, 'function productPanelTitle') !== false, 'Product panel can avoid repeating the article title');
 ap_assert(strpos($pluginSource, 'function renderArticleProductPanel') !== false, 'Plugin exposes theme article product panel helper');
 ap_assert(strpos($pluginSource, 'function renderPostBadge') !== false, 'Plugin exposes theme post badge helper');
 ap_assert(strpos($pluginSource, 'function renderArticlePayPanel') !== false, 'Plugin renders article editor panel');
@@ -100,6 +101,14 @@ ap_assert(strpos($pluginSource, 'product-panel') !== false, 'Theme can override 
 ap_assert(strpos($pluginSource, 'post-badge') !== false, 'Theme can override post-badge template');
 ap_assert(strpos($pluginSource, 'typechopay-status--') !== false, 'Product panel emits status classes');
 ap_assert(strpos($pluginSource, 'typechopay-product-panel--has-cover') !== false, 'Product panel exposes cover layout class');
+ap_assert(strpos($pluginSource, '购买卡密') !== false, 'Card product panel uses a purchase-focused heading');
+ap_assert(strpos($pluginSource, 'typechopay-product-panel__trust') !== false, 'Product panel renders purchase assurance hints');
+ap_assert(strpos($pluginSource, '购买保障') !== false, 'Product panel has an accessible assurance label');
+ap_assert(strpos($pluginSource, '自动发卡') !== false, 'Product panel highlights automatic card delivery');
+ap_assert(strpos($pluginSource, '支付后可查看') !== false, 'Product panel explains post-payment visibility');
+ap_assert(strpos($pluginSource, '订单可追踪') !== false, 'Product panel explains order traceability');
+ap_assert(strpos($pluginSource, '支付宝支付') !== false, 'Product checkout button names the payment action clearly');
+ap_assert(strpos($pluginSource, 'amountText') !== false && strpos($pluginSource, ' · ') !== false, 'Product checkout button includes the payable amount');
 ap_assert(strpos($pluginSource, '登录后购买') !== false, 'Product panel exposes login-required state');
 ap_assert(strpos($pluginSource, '商品已售罄') !== false, 'Product panel exposes soldout state');
 
