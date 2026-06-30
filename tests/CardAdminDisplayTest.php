@@ -37,6 +37,16 @@ cad_assert(strpos($salesSource, 'card_display') !== false, 'Sales page shows ful
 cad_assert(strpos($inventorySource, 'Cache-Control') !== false, 'Inventory page sends no-store cache header');
 cad_assert(strpos($salesSource, 'Cache-Control') !== false, 'Sales page sends no-store cache header');
 
+$salesMethod = '';
+if (preg_match('/public function sales\(.*?^    \}/ms', $serviceSource, $m)) {
+    $salesMethod = $m[0];
+}
+cad_assert(strpos($salesMethod, "where('id IN ?', array_keys(\$orderIds))") !== false, 'Sales page batch-loads related orders');
+cad_assert(strpos($salesMethod, "where('order_id IN ?', array_keys(\$orderIds))") !== false, 'Sales page batch-loads related fulfillments');
+cad_assert(strpos($salesMethod, "where('card_item_id IN ?', array_keys(\$cardIds))") !== false, 'Sales page batches fulfillments by delivered card ids');
+cad_assert(strpos($salesMethod, "where('id = ?', \$orderId)") === false, 'Sales page does not query each order inside the card loop');
+cad_assert(strpos($salesMethod, "where('card_item_id = ?', (int) \$card['id'])") === false, 'Sales page does not query each fulfillment inside the card loop');
+
 echo "\n\n--- CardAdminDisplayTest ---\n";
 echo "Passed: {$passed}\n";
 echo "Failed: {$failed}\n";

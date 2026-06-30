@@ -310,7 +310,43 @@ final class CardCodeService
         $cards = $this->db->fetchAll($cardSelect);
         $cards = $this->withAdminDisplayFields($cards);
 
-        // Enrich each card with order and fulfillment data.
+        $orderIds = [];
+        $cardIds = [];
+        foreach ($cards as $card) {
+            $cardId = (int) ($card['id'] ?? 0);
+            $orderId = (int) ($card['delivered_order_id'] ?? 0);
+            if ($cardId > 0) {
+                $cardIds[$cardId] = true;
+            }
+            if ($orderId > 0) {
+                $orderIds[$orderId] = true;
+            }
+        }
+
+        $ordersById = [];
+        if ($orderIds) {
+            $orders = $this->db->fetchAll(
+                $this->db->select()->from('table.pay_orders')
+                    ->where('id IN ?', array_keys($orderIds))
+            );
+            foreach ($orders as $order) {
+                $ordersById[(int) $order['id']] = $order;
+            }
+        }
+
+        $fulfillmentsByOrderAndCard = [];
+        if ($orderIds && $cardIds) {
+            $fulfillments = $this->db->fetchAll(
+                $this->db->select()->from('table.pay_fulfillments')
+                    ->where('order_id IN ?', array_keys($orderIds))
+                    ->where('card_item_id IN ?', array_keys($cardIds))
+            );
+            foreach ($fulfillments as $fulfillment) {
+                $key = (int) ($fulfillment['order_id'] ?? 0) . ':' . (int) ($fulfillment['card_item_id'] ?? 0);
+                $fulfillmentsByOrderAndCard[$key] = $fulfillment;
+            }
+        }
+
         $rows = [];
         foreach ($cards as $card) {
             $row = [
@@ -336,35 +372,25 @@ final class CardCodeService
                 'fulfillment_detail_status' => null,
             ];
 
-            // Load order info.
             $orderId = (int) ($card['delivered_order_id'] ?? 0);
-            if ($orderId > 0) {
-                $order = $this->db->fetchRow(
-                    $this->db->select()->from('table.pay_orders')->where('id = ?', $orderId)->limit(1)
-                );
-                if ($order) {
-                    $row['out_trade_no'] = $order['out_trade_no'];
-                    $row['amount'] = (int) $order['amount'];
-                    $row['currency'] = $order['currency'];
-                    $row['gateway'] = $order['gateway'];
-                    $row['user_id'] = $order['user_id'] ?? null;
-                    $row['guest_token_hash'] = $order['guest_token_hash'] ?? null;
-                    $row['payment_status'] = $order['payment_status'] ?? null;
-                    $row['fulfillment_status'] = $order['fulfillment_status'] ?? null;
-                    $row['paid_at'] = $order['paid_at'] ?? null;
+            $order = $ordersById[$orderId] ?? null;
+            if ($order) {
+                $row['out_trade_no'] = $order['out_trade_no'];
+                $row['amount'] = (int) $order['amount'];
+                $row['currency'] = $order['currency'];
+                $row['gateway'] = $order['gateway'];
+                $row['user_id'] = $order['user_id'] ?? null;
+                $row['guest_token_hash'] = $order['guest_token_hash'] ?? null;
+                $row['payment_status'] = $order['payment_status'] ?? null;
+                $row['fulfillment_status'] = $order['fulfillment_status'] ?? null;
+                $row['paid_at'] = $order['paid_at'] ?? null;
 
-                    // Load fulfillment info.
-                    $fulfillment = $this->db->fetchRow(
-                        $this->db->select()->from('table.pay_fulfillments')
-                            ->where('order_id = ?', $orderId)
-                            ->where('card_item_id = ?', (int) $card['id'])
-                            ->limit(1)
-                    );
-                    if ($fulfillment) {
-                        $row['attempts'] = (int) ($fulfillment['attempts'] ?? 0);
-                        $row['last_error'] = $fulfillment['last_error'] ?? null;
-                        $row['fulfillment_detail_status'] = $fulfillment['status'] ?? null;
-                    }
+                $fulfillmentKey = $orderId . ':' . (int) $card['id'];
+                $fulfillment = $fulfillmentsByOrderAndCard[$fulfillmentKey] ?? null;
+                if ($fulfillment) {
+                    $row['attempts'] = (int) ($fulfillment['attempts'] ?? 0);
+                    $row['last_error'] = $fulfillment['last_error'] ?? null;
+                    $row['fulfillment_detail_status'] = $fulfillment['status'] ?? null;
                 }
             }
 
