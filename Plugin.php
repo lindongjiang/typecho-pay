@@ -122,7 +122,7 @@ class Plugin implements PluginInterface
         Helper::addPanel($menuIndex, self::DIAGNOSTICS_PANEL, _t('支付诊断'), _t('TypechoPay'), 'administrator');
         Helper::addPanel($menuIndex, self::SETTINGS_HELP_PANEL, _t('支付设置说明'), _t('TypechoPay'), 'administrator');
 
-        \Typecho\Plugin::factory('Widget\Base\Contents')->contentEx = __CLASS__ . '::renderPayShortcodes';
+        \Typecho\Plugin::factory('Widget\Base\Contents')->contentEx_20 = __CLASS__ . '::renderPayShortcodes';
         \Typecho\Plugin::factory('admin/write-post.php')->content = __CLASS__ . '::renderArticlePayPanel';
         \Typecho\Plugin::factory('admin/write-page.php')->content = __CLASS__ . '::renderArticlePayPanel';
         \Typecho\Plugin::factory('Widget\Contents\Post\Edit')->write = __CLASS__ . '::injectArticleProductShortcode';
@@ -1358,7 +1358,7 @@ class Plugin implements PluginInterface
             . $coverHtml
             . '<div class="typechopay-product-panel__main">'
             . '<div class="typechopay-product-panel__label">' . htmlspecialchars($typeLabel) . '</div>'
-            . '<h2 class="typechopay-product-panel__title">' . htmlspecialchars($title) . '</h2>'
+            . '<div class="typechopay-product-panel__title" role="heading" aria-level="2">' . htmlspecialchars($title) . '</div>'
             . '<p class="typechopay-product-panel__desc">' . htmlspecialchars($summary) . '</p>'
             . '<div class="typechopay-product-panel__meta">'
             . '<span class="typechopay-product-panel__price">' . htmlspecialchars(Support\Money::formatForDisplay($amount, $currency)) . '</span>'
@@ -1797,12 +1797,12 @@ class Plugin implements PluginInterface
         $deliveryUrl = self::currentVisitorCardDeliveryUrl($product, $options);
         if (empty($state['can_buy'])) {
             if ($deliveryUrl !== '') {
-                return '<a class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
+                return '<a no-pjax class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
                     . htmlspecialchars($deliveryUrl) . '">' . htmlspecialchars(_t('查看我的卡密')) . '</a>';
             }
 
             if (($state['status'] ?? '') === 'login_required') {
-                return '<a class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
+                return '<a no-pjax class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
                     . htmlspecialchars((string) $options->loginUrl) . '">' . htmlspecialchars((string) $state['label']) . '</a>';
             }
 
@@ -1834,7 +1834,7 @@ class Plugin implements PluginInterface
         }
 
         if ($deliveryUrl !== '') {
-            $buttons[] = '<a class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
+            $buttons[] = '<a no-pjax class="' . htmlspecialchars($buttonClass) . ' typechopay-button--secondary" href="'
                 . htmlspecialchars($deliveryUrl) . '">' . htmlspecialchars(_t('查看我的卡密')) . '</a>';
         }
 

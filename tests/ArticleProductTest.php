@@ -27,6 +27,7 @@ $productsSource = file_get_contents($root . '/manage/products.php');
 ap_assert(strpos($pluginSource, 'productAutoInjectPosition') !== false, 'Plugin has auto-inject config');
 ap_assert(strpos($pluginSource, "factory('admin/write-post.php')->content") !== false, 'Registers post editor content hook');
 ap_assert(strpos($pluginSource, "factory('admin/write-page.php')->content") !== false, 'Registers page editor content hook');
+ap_assert(strpos($pluginSource, "->contentEx_20") !== false, 'Frontend shortcode rendering runs after theme content filters');
 ap_assert(strpos($pluginSource, "Widget\\Contents\\Post\\Edit')->write") !== false, 'Registers post write hook');
 ap_assert(strpos($pluginSource, "Widget\\Contents\\Page\\Edit')->write") !== false, 'Registers page write hook');
 ap_assert(strpos($pluginSource, "Widget\\Contents\\Post\\Edit')->finishPublish") !== false, 'Registers post finishPublish hook');
@@ -114,6 +115,9 @@ ap_assert(strpos($pluginSource, '保存时在正文顶部插入购买模块') !=
 ap_assert(strpos($pluginSource, '插入购买模块到光标') !== false, 'Editor can insert the product shortcode at cursor');
 ap_assert(strpos($pluginSource, '查看前台') !== false, 'Editor links to frontend preview');
 ap_assert(strpos($pluginSource, '查看我的卡密') !== false, 'Purchased card products expose delivery link');
+ap_assert(strpos($pluginSource, '<h2 class="typechopay-product-panel__title"') === false, 'Product panel title does not pollute theme TOC');
+ap_assert(strpos($pluginSource, '<div class="typechopay-product-panel__title" role="heading"') !== false, 'Product panel keeps accessible heading semantics');
+ap_assert(substr_count($pluginSource, '<a no-pjax class="') >= 3, 'Theme PJAX does not intercept delivery or login links');
 ap_assert(strpos($pluginSource, 'no deliverable') !== false, 'Product panel diagnostics include missing deliverable');
 ap_assert(strpos($pluginSource, 'no gateway') !== false, 'Product panel diagnostics include missing gateway');
 ap_assert(strpos($pluginSource, 'no stock') !== false, 'Product panel diagnostics include missing stock');

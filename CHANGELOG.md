@@ -11,6 +11,7 @@
 
 ### Maintenance
 
+- Added safer VOID theme compatibility by rendering payment shortcodes after theme content filters, avoiding TOC pollution from product panel headings, and marking delivery/login links as non-PJAX.
 - Restored admin-only article product diagnostics for missing and paused bound products.
 - Removed the unused non-atomic return-token verifier and unused fulfillment handler contract.
 - Reworked card stock counting to use the Typecho query builder.
