@@ -1425,7 +1425,14 @@ class Plugin implements PluginInterface
             : '';
         $buttonsHtml = '<div class="typechopay-card__actions">'
             . $detailHtml
-            . self::renderProductActionArea($product, $options, $config, (string) $options->index, 'typechopay-card__buy', $state)
+            . self::renderProductActionArea(
+                $product,
+                $options,
+                $config,
+                $detailUrl !== '' ? $detailUrl : (string) $options->index,
+                'typechopay-card__buy',
+                $state
+            )
             . '</div>';
         $titleHtml = htmlspecialchars($product['title']);
         if ($detailUrl !== '') {

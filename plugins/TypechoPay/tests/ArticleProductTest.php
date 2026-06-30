@@ -84,6 +84,7 @@ ap_assert(strpos($pluginSource, 'function contentPermalinkById') !== false, 'Pro
 ap_assert(strpos($pluginSource, 'Router::url($type') !== false, 'Product detail links use Typecho route generation');
 ap_assert(strpos($pluginSource, 'typechopay-card__detail-link') !== false, 'Product cards expose a visible detail link');
 ap_assert(strpos($pluginSource, 'typechopay-card__title-link') !== false, 'Product card titles link to the detail page');
+ap_assert(strpos($pluginSource, '$detailUrl !== \'\' ? $detailUrl : (string) $options->index') !== false, 'Product card checkout returns to the detail page when available');
 ap_assert(strpos($pluginSource, 'category_slug') !== false, 'Shop shortcode supports Typecho category slug');
 ap_assert(strpos($pluginSource, 'typecho_category') !== false, 'Shop shortcode supports Typecho category name');
 ap_assert(strpos($pluginSource, 'loadFrontendCss') !== false, 'Plugin can disable default frontend CSS');
