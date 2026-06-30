@@ -106,7 +106,330 @@ final class CardDeliveryPage
     private static function style(): string
     {
         return <<<'CSS'
-:root{color-scheme:light dark;--tp-bg:#f5f1ec;--tp-panel:#fffdf9;--tp-text:#221f1c;--tp-muted:#706a63;--tp-line:rgba(38,31,24,.12);--tp-accent:#a94f4f;--tp-accent-strong:#8f3f3f;--tp-soft:#f1e4dc;--tp-code:#fbf8f3;--tp-ok:#2f7e58}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--tp-bg);color:var(--tp-text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft Yahei",Arial,sans-serif;line-height:1.65}.typechopay-delivery{width:min(920px,calc(100vw - 32px));margin:0 auto;padding:48px 0 56px}.typechopay-delivery__hero,.typechopay-delivery__meta,.typechopay-delivery__card,.typechopay-delivery__empty{border:1px solid var(--tp-line);border-radius:8px;background:var(--tp-panel);box-shadow:0 18px 48px rgba(42,32,24,.08)}.typechopay-delivery__hero{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:30px}.typechopay-delivery__eyebrow,.typechopay-delivery__card-kicker{margin:0 0 6px;color:var(--tp-accent);font-size:12px;font-weight:800;letter-spacing:0;text-transform:uppercase}.typechopay-delivery h1{margin:0;font-size:34px;line-height:1.18;letter-spacing:0}.typechopay-delivery__lead{max-width:680px;margin:12px 0 0;color:var(--tp-muted)}.typechopay-delivery__status{flex:0 0 auto;border:1px solid rgba(47,126,88,.24);border-radius:6px;padding:5px 10px;color:var(--tp-ok);background:rgba(47,126,88,.08);font-size:13px;font-weight:700}.typechopay-delivery__meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-top:16px;overflow:hidden}.typechopay-delivery__meta div{padding:16px 18px;border-right:1px solid var(--tp-line)}.typechopay-delivery__meta div:last-child{border-right:0}.typechopay-delivery__meta dt{margin:0;color:var(--tp-muted);font-size:12px}.typechopay-delivery__meta dd{margin:4px 0 0;font-weight:750;word-break:break-all}.typechopay-delivery__cards{display:grid;gap:16px;margin-top:18px}.typechopay-delivery__card{padding:20px}.typechopay-delivery__card header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.typechopay-delivery__card h2{margin:0;font-size:20px;line-height:1.25}.typechopay-delivery__card header span{color:var(--tp-muted);font-size:13px}.typechopay-delivery__credential+.typechopay-delivery__credential{margin-top:12px}.typechopay-delivery__credential-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:7px}.typechopay-delivery__credential-head strong{font-size:14px}.typechopay-delivery__credential button,.typechopay-delivery__actions a{border:1px solid var(--tp-accent);border-radius:6px;background:var(--tp-accent);color:#fff;cursor:pointer;font:inherit;font-size:13px;font-weight:750;text-decoration:none}.typechopay-delivery__credential button{padding:5px 10px}.typechopay-delivery__credential button:hover,.typechopay-delivery__actions a:hover{border-color:var(--tp-accent-strong);background:var(--tp-accent-strong)}.typechopay-delivery__value{display:block;overflow:auto;margin:0;padding:13px 14px;border:1px solid var(--tp-line);border-radius:6px;background:var(--tp-code);color:var(--tp-text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.typechopay-delivery__empty{margin-top:18px;padding:20px;color:var(--tp-muted)}.typechopay-delivery__actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.typechopay-delivery__actions a{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 16px}.typechopay-delivery__actions a+a{border-color:var(--tp-line);background:transparent;color:var(--tp-text)}@media (prefers-color-scheme:dark){:root{--tp-bg:#161413;--tp-panel:#1f1d1b;--tp-text:#eee7df;--tp-muted:#b2aaa1;--tp-line:rgba(255,255,255,.12);--tp-accent:#d18484;--tp-accent-strong:#e2a0a0;--tp-soft:#2b2422;--tp-code:#151312;--tp-ok:#78c79f}.typechopay-delivery__hero,.typechopay-delivery__meta,.typechopay-delivery__card,.typechopay-delivery__empty{box-shadow:none}.typechopay-delivery__actions a+a{color:var(--tp-text)}}@media (max-width:760px){.typechopay-delivery{width:min(100vw - 22px,920px);padding:24px 0 36px}.typechopay-delivery__hero{display:block;padding:22px}.typechopay-delivery h1{font-size:28px}.typechopay-delivery__status{display:inline-flex;margin-top:16px}.typechopay-delivery__meta{grid-template-columns:1fr 1fr}.typechopay-delivery__meta div{border-right:0;border-bottom:1px solid var(--tp-line)}.typechopay-delivery__meta div:nth-last-child(-n+2){border-bottom:0}.typechopay-delivery__card{padding:16px}.typechopay-delivery__card header{display:block}.typechopay-delivery__card header span{display:block;margin-top:8px}.typechopay-delivery__actions a{flex:1 1 160px}}@media (max-width:460px){.typechopay-delivery__meta{grid-template-columns:1fr}.typechopay-delivery__meta div{border-bottom:1px solid var(--tp-line)}.typechopay-delivery__meta div:last-child{border-bottom:0}.typechopay-delivery__credential-head{align-items:flex-start}.typechopay-delivery__credential button{flex:0 0 auto}}
+:root {
+    color-scheme: light dark;
+    --tp-bg: #f5f5f7;
+    --tp-panel: rgba(255, 255, 255, 0.84);
+    --tp-panel-strong: rgba(255, 255, 255, 0.96);
+    --tp-text: #1d1d1f;
+    --tp-muted: #6e6e73;
+    --tp-line: rgba(60, 60, 67, 0.16);
+    --tp-accent: #007aff;
+    --tp-accent-strong: #0064d2;
+    --tp-code: rgba(118, 118, 128, 0.1);
+    --tp-ok: #248a3d;
+    --tp-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--tp-bg);
+    color: var(--tp-text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", Arial, sans-serif;
+    line-height: 1.65;
+    letter-spacing: 0;
+}
+
+.typechopay-delivery {
+    width: min(920px, calc(100vw - 32px));
+    margin: 0 auto;
+    padding: 48px 0 56px;
+}
+
+.typechopay-delivery__hero,
+.typechopay-delivery__meta,
+.typechopay-delivery__card,
+.typechopay-delivery__empty {
+    border: 1px solid var(--tp-line);
+    border-radius: 22px;
+    background: var(--tp-panel);
+    -webkit-backdrop-filter: saturate(180%) blur(22px);
+    backdrop-filter: saturate(180%) blur(22px);
+    box-shadow: var(--tp-shadow);
+}
+
+.typechopay-delivery__hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 30px;
+}
+
+.typechopay-delivery__eyebrow,
+.typechopay-delivery__card-kicker {
+    margin: 0 0 6px;
+    color: var(--tp-accent);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.typechopay-delivery h1 {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.18;
+    letter-spacing: 0;
+}
+
+.typechopay-delivery__lead {
+    max-width: 680px;
+    margin: 12px 0 0;
+    color: var(--tp-muted);
+}
+
+.typechopay-delivery__status {
+    flex: 0 0 auto;
+    border: 1px solid rgba(52, 199, 89, 0.28);
+    border-radius: 999px;
+    padding: 5px 11px;
+    color: var(--tp-ok);
+    background: rgba(52, 199, 89, 0.12);
+    font-size: 13px;
+    font-weight: 750;
+}
+
+.typechopay-delivery__meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 16px;
+    overflow: hidden;
+}
+
+.typechopay-delivery__meta div {
+    padding: 16px 18px;
+    border-right: 1px solid var(--tp-line);
+}
+
+.typechopay-delivery__meta div:last-child {
+    border-right: 0;
+}
+
+.typechopay-delivery__meta dt {
+    margin: 0;
+    color: var(--tp-muted);
+    font-size: 12px;
+}
+
+.typechopay-delivery__meta dd {
+    margin: 4px 0 0;
+    font-weight: 760;
+    word-break: break-all;
+}
+
+.typechopay-delivery__cards {
+    display: grid;
+    gap: 16px;
+    margin-top: 18px;
+}
+
+.typechopay-delivery__card {
+    padding: 20px;
+}
+
+.typechopay-delivery__card header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.typechopay-delivery__card h2 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.25;
+}
+
+.typechopay-delivery__card header span {
+    color: var(--tp-muted);
+    font-size: 13px;
+}
+
+.typechopay-delivery__credential + .typechopay-delivery__credential {
+    margin-top: 12px;
+}
+
+.typechopay-delivery__credential-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 7px;
+}
+
+.typechopay-delivery__credential-head strong {
+    font-size: 14px;
+}
+
+.typechopay-delivery__credential button,
+.typechopay-delivery__actions a {
+    border: 1px solid var(--tp-accent);
+    border-radius: 12px;
+    background: var(--tp-accent);
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.typechopay-delivery__credential button {
+    padding: 6px 11px;
+}
+
+.typechopay-delivery__credential button:hover,
+.typechopay-delivery__actions a:hover {
+    border-color: var(--tp-accent-strong);
+    background: var(--tp-accent-strong);
+}
+
+.typechopay-delivery__value {
+    display: block;
+    overflow: auto;
+    margin: 0;
+    padding: 13px 14px;
+    border: 1px solid var(--tp-line);
+    border-radius: 14px;
+    background: var(--tp-code);
+    color: var(--tp-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.typechopay-delivery__empty {
+    margin-top: 18px;
+    padding: 20px;
+    color: var(--tp-muted);
+}
+
+.typechopay-delivery__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.typechopay-delivery__actions a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 9px 16px;
+}
+
+.typechopay-delivery__actions a + a {
+    border-color: var(--tp-line);
+    background: var(--tp-panel-strong);
+    color: var(--tp-text);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --tp-bg: #0f0f10;
+        --tp-panel: rgba(28, 28, 30, 0.84);
+        --tp-panel-strong: rgba(28, 28, 30, 0.96);
+        --tp-text: #f5f5f7;
+        --tp-muted: #a1a1a6;
+        --tp-line: rgba(255, 255, 255, 0.14);
+        --tp-accent: #0a84ff;
+        --tp-accent-strong: #409cff;
+        --tp-code: rgba(120, 120, 128, 0.24);
+        --tp-ok: #30d158;
+        --tp-shadow: none;
+    }
+}
+
+@media (max-width: 760px) {
+    .typechopay-delivery {
+        width: min(100vw - 22px, 920px);
+        padding: 24px 0 36px;
+    }
+
+    .typechopay-delivery__hero {
+        display: block;
+        padding: 22px;
+    }
+
+    .typechopay-delivery h1 {
+        font-size: 28px;
+    }
+
+    .typechopay-delivery__status {
+        display: inline-flex;
+        margin-top: 16px;
+    }
+
+    .typechopay-delivery__meta {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .typechopay-delivery__meta div {
+        border-right: 0;
+        border-bottom: 1px solid var(--tp-line);
+    }
+
+    .typechopay-delivery__meta div:nth-last-child(-n+2) {
+        border-bottom: 0;
+    }
+
+    .typechopay-delivery__card {
+        padding: 16px;
+    }
+
+    .typechopay-delivery__card header {
+        display: block;
+    }
+
+    .typechopay-delivery__card header span {
+        display: block;
+        margin-top: 8px;
+    }
+
+    .typechopay-delivery__actions a {
+        flex: 1 1 160px;
+    }
+}
+
+@media (max-width: 460px) {
+    .typechopay-delivery__hero,
+    .typechopay-delivery__meta,
+    .typechopay-delivery__card,
+    .typechopay-delivery__empty {
+        border-radius: 18px;
+    }
+
+    .typechopay-delivery__meta {
+        grid-template-columns: 1fr;
+    }
+
+    .typechopay-delivery__meta div {
+        border-bottom: 1px solid var(--tp-line);
+    }
+
+    .typechopay-delivery__meta div:last-child {
+        border-bottom: 0;
+    }
+
+    .typechopay-delivery__credential-head {
+        align-items: flex-start;
+    }
+
+    .typechopay-delivery__credential button {
+        flex: 0 0 auto;
+    }
+}
 CSS;
     }
 
