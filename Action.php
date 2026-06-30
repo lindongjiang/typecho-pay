@@ -13,6 +13,7 @@ use TypechoPlugin\TypechoPay\Services\NonceService;
 use TypechoPlugin\TypechoPay\Services\OrderService;
 use TypechoPlugin\TypechoPay\Services\ProductService;
 use TypechoPlugin\TypechoPay\Services\PurchasePolicyService;
+use TypechoPlugin\TypechoPay\Support\CardDeliveryPage;
 use TypechoPlugin\TypechoPay\Support\GatewayConfigurationException;
 use TypechoPlugin\TypechoPay\Support\GuestToken;
 use TypechoPlugin\TypechoPay\Support\HttpHeaders;
@@ -522,47 +523,11 @@ class Action extends BaseOptions implements ActionInterface
             $cards = (new CardCodeService(Db::get()))->deliveredCardsForOrder($order);
         }
 
-        $html = '<!doctype html><html><head><meta charset="utf-8"><title>卡密交付</title>'
-            . '<meta name="robots" content="noindex, nofollow">'
-            . '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;line-height:1.6}'
-            . '.box{max-width:760px}.card{border:1px solid #ddd;background:#fafafa;padding:14px;margin:12px 0}'
-            . '.value{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;background:#fff;padding:8px;border:1px solid #e5e5e5}</style>'
-            . '</head><body><main class="box">'
-            . '<h1>卡密交付</h1>'
-            . '<p>订单号：' . htmlspecialchars((string) $order['out_trade_no']) . '</p>'
-            . '<p>订单状态：' . htmlspecialchars((string) ($order['status'] ?? 'unknown')) . '</p>'
-            . '<p>交付状态：' . htmlspecialchars((string) ($order['fulfillment_status'] ?? '')) . '</p>';
-
-        if ($cards) {
-            foreach ($cards as $card) {
-                $html .= '<section class="card">'
-                    . '<p><strong>卡号 / 兑换码</strong></p>'
-                    . '<p class="value">' . htmlspecialchars((string) $card['code']) . '</p>';
-                $secret = $card['secret'] ?? null;
-                if ($secret !== null && $secret !== '') {
-                    $html .= '<p><strong>卡密 / 密钥</strong></p>'
-                        . '<p class="value">' . htmlspecialchars((string) $secret) . '</p>';
-                }
-                $html .= '<p>交付时间：' . htmlspecialchars((string) ($card['delivered_at'] ?? '')) . '</p>'
-                    . '</section>';
-            }
-        } elseif ((string) ($order['status'] ?? '') === 'paid') {
-            $html .= '<p>支付已完成，但卡密暂未交付完成。请联系站点管理员处理。</p>';
-        } else {
-            $html .= '<p>订单尚未完成支付，暂不能查看卡密。</p>';
-        }
-
         $deliveryUrl = Common::url(
             '/action/typechopay?do=delivery&out_trade_no=' . rawurlencode((string) $order['out_trade_no']),
             $this->options->index
         );
-        $html .= '<p><a href="' . htmlspecialchars($deliveryUrl) . '">刷新交付状态</a></p>';
-        if ($returnTo !== '') {
-            $html .= '<p><a href="' . htmlspecialchars($returnTo) . '">返回原页面</a></p>';
-        }
-
-        $html .= '</main></body></html>';
-        $this->response->throwContent($html, 'text/html');
+        $this->response->throwContent(CardDeliveryPage::render($order, $cards, $deliveryUrl, $returnTo), 'text/html');
     }
 
     private function providerResponse(string $gateway, bool $success): void

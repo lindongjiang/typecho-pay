@@ -93,6 +93,7 @@ ap_assert(strpos($pluginSource, 'typechopay_product(?:\\s+') !== false, 'typecho
 ap_assert(strpos($pluginSource, 'product-panel') !== false, 'Theme can override product-panel template');
 ap_assert(strpos($pluginSource, 'post-badge') !== false, 'Theme can override post-badge template');
 ap_assert(strpos($pluginSource, 'typechopay-status--') !== false, 'Product panel emits status classes');
+ap_assert(strpos($pluginSource, 'typechopay-product-panel--has-cover') !== false, 'Product panel exposes cover layout class');
 ap_assert(strpos($pluginSource, '登录后购买') !== false, 'Product panel exposes login-required state');
 ap_assert(strpos($pluginSource, '商品已售罄') !== false, 'Product panel exposes soldout state');
 

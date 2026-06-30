@@ -1336,6 +1336,10 @@ class Plugin implements PluginInterface
         $coverHtml = $coverUrl !== ''
             ? '<div class="typechopay-product-panel__cover"><img src="' . htmlspecialchars($coverUrl) . '" alt="' . htmlspecialchars($title) . '"></div>'
             : '';
+        $panelClass = 'typechopay-product-panel typechopay-status--' . htmlspecialchars($state['status']);
+        if ($coverHtml !== '') {
+            $panelClass .= ' typechopay-product-panel--has-cover';
+        }
 
         $typeLabel = ((string) ($product['stock_policy'] ?? 'none') === 'reserve_on_order') ? _t('自动售卡') : _t('付费内容');
         $stockHtml = $stats['stock_text'] !== ''
@@ -1354,7 +1358,7 @@ class Plugin implements PluginInterface
             $state
         );
 
-        return $css . '<section class="typechopay-product-panel typechopay-status--' . htmlspecialchars($state['status']) . '" data-product-id="' . $pid . '">'
+        return $css . '<section class="' . $panelClass . '" data-product-id="' . $pid . '">'
             . $coverHtml
             . '<div class="typechopay-product-panel__main">'
             . '<div class="typechopay-product-panel__label">' . htmlspecialchars($typeLabel) . '</div>'
