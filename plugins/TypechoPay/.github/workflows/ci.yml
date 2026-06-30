@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['7.4', '8.0', '8.2']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: json, openssl, curl
+          coverage: none
+
+      - name: Validate Composer metadata
+        run: composer validate --no-check-lock --strict
+
+      - name: Install production dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+
+      - name: Lint PHP files
+        run: |
+          find . \
+            -path './vendor' -prune -o \
+            -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run tests
+        run: |
+          for test in tests/*Test.php; do
+            php "$test"
+          done

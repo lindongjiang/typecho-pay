@@ -1,0 +1,19 @@
+{
+  "name": "mantou/typecho-pay",
+  "description": "Typecho order center and CNY payment gateway adapter for WeChat Pay and Alipay.",
+  "type": "typecho-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=7.4",
+    "ext-json": "*",
+    "ext-openssl": "*",
+    "ext-curl": "*",
+    "wechatpay/wechatpay": "^1.4",
+    "alipaysdk/openapi": "^3.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "TypechoPlugin\\TypechoPay\\": ["", "src/"]
+    }
+  }
+}
