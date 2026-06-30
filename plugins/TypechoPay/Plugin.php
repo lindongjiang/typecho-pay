@@ -5,6 +5,7 @@ namespace TypechoPlugin\TypechoPay;
 use Typecho\Common;
 use Typecho\Db;
 use Typecho\Plugin\PluginInterface;
+use Typecho\Router;
 use Typecho\Widget\Helper\Form;
 use Typecho\Widget\Helper\Form\Element;
 use Typecho\Widget\Helper\Form\Element\Checkbox;
@@ -1399,9 +1400,14 @@ class Plugin implements PluginInterface
 
         $summary = (string) ($product['summary'] ?? '');
         $coverUrl = (string) ($product['cover_url'] ?? '');
+        $detailUrl = self::productDetailUrl($product, $options);
+        $detailAttr = $detailUrl !== '' ? ' href="' . htmlspecialchars($detailUrl) . '"' : '';
         $coverHtml = '';
         if ($coverUrl !== '') {
-            $coverHtml = '<div class="typechopay-card__cover"><img src="' . htmlspecialchars($coverUrl) . '" alt="' . htmlspecialchars($product['title']) . '"></div>';
+            $coverTag = $detailUrl !== '' ? 'a' : 'div';
+            $coverHtml = '<' . $coverTag . ' class="typechopay-card__cover typechopay-card__detail"' . $detailAttr . '>'
+                . '<img src="' . htmlspecialchars($coverUrl) . '" alt="' . htmlspecialchars($product['title']) . '">'
+                . '</' . $coverTag . '>';
         }
 
         $catHtml = '';
@@ -1414,21 +1420,131 @@ class Plugin implements PluginInterface
             $summaryHtml = '<p class="typechopay-card__summary">' . htmlspecialchars($summary) . '</p>';
         }
 
+        $detailHtml = $detailUrl !== ''
+            ? '<a class="typechopay-card__detail-link" href="' . htmlspecialchars($detailUrl) . '">' . htmlspecialchars(_t('查看详情')) . '</a>'
+            : '';
         $buttonsHtml = '<div class="typechopay-card__actions">'
+            . $detailHtml
             . self::renderProductActionArea($product, $options, $config, (string) $options->index, 'typechopay-card__buy', $state)
             . '</div>';
+        $titleHtml = htmlspecialchars($product['title']);
+        if ($detailUrl !== '') {
+            $titleHtml = '<a class="typechopay-card__title-link" href="' . htmlspecialchars($detailUrl) . '">' . $titleHtml . '</a>';
+        }
 
         return '<article class="typechopay-card" data-product-id="' . $pid . '">'
             . $coverHtml
             . '<div class="typechopay-card__body">'
             . $catHtml
-            . '<h3 class="typechopay-card__title">' . htmlspecialchars($product['title']) . '</h3>'
+            . '<h3 class="typechopay-card__title">' . $titleHtml . '</h3>'
             . '<div class="typechopay-card__price">' . htmlspecialchars(Support\Money::formatForDisplay($amount, $currency)) . '</div>'
             . $stockHtml
             . $summaryHtml
             . $buttonsHtml
             . '</div>'
             . '</article>';
+    }
+
+    private static function productDetailUrl(array $product, Options $options): string
+    {
+        $contentId = (int) ($product['content_id'] ?? 0);
+        if ($contentId <= 0) {
+            return '';
+        }
+
+        return self::contentPermalinkById($contentId, $options);
+    }
+
+    private static function contentPermalinkById(int $contentId, Options $options): string
+    {
+        $content = Db::get()->fetchRow(
+            Db::get()->select('cid', 'slug', 'created', 'type', 'status', 'parent')
+                ->from('table.contents')
+                ->where('cid = ?', $contentId)
+                ->where('status = ?', 'publish')
+                ->limit(1)
+        );
+        if (!$content) {
+            return '';
+        }
+
+        $type = (string) ($content['type'] ?? 'post');
+        if (!in_array($type, ['post', 'page'], true)) {
+            return '';
+        }
+
+        $created = (int) ($content['created'] ?? 0);
+        $params = [
+            'cid' => (string) (int) $content['cid'],
+            'slug' => urlencode((string) ($content['slug'] ?? '')),
+            'year' => $created > 0 ? date('Y', $created) : '',
+            'month' => $created > 0 ? date('m', $created) : '',
+            'day' => $created > 0 ? date('d', $created) : '',
+            'category' => self::contentPrimaryCategorySlug($contentId),
+            'directory' => $type === 'page' ? self::pageDirectory($content) : '',
+        ];
+        if ($type === 'post') {
+            $params['directory'] = $params['category'];
+        }
+
+        $url = Router::url($type, $params, (string) $options->index);
+        return $url !== '#' ? $url : '';
+    }
+
+    private static function contentPrimaryCategorySlug(int $contentId): string
+    {
+        $relationships = Db::get()->fetchAll(
+            Db::get()->select('mid')->from('table.relationships')
+                ->where('cid = ?', $contentId)
+        );
+        $mids = [];
+        foreach ($relationships as $relationship) {
+            $mid = (int) ($relationship['mid'] ?? 0);
+            if ($mid > 0) {
+                $mids[$mid] = $mid;
+            }
+        }
+        if (!$mids) {
+            return '';
+        }
+
+        $category = Db::get()->fetchRow(
+            Db::get()->select('slug')->from('table.metas')
+                ->where('mid IN ?', array_values($mids))
+                ->where('type = ?', 'category')
+                ->limit(1)
+        );
+
+        return $category ? urlencode((string) ($category['slug'] ?? '')) : '';
+    }
+
+    private static function pageDirectory(array $content): string
+    {
+        $slugs = [];
+        $current = $content;
+        for ($i = 0; $i < 20; $i++) {
+            $slug = trim((string) ($current['slug'] ?? ''));
+            if ($slug !== '') {
+                array_unshift($slugs, urlencode($slug));
+            }
+            $parent = (int) ($current['parent'] ?? 0);
+            if ($parent <= 0) {
+                break;
+            }
+            $parentRow = Db::get()->fetchRow(
+                Db::get()->select('cid', 'slug', 'parent')->from('table.contents')
+                    ->where('cid = ?', $parent)
+                    ->where('type = ?', 'page')
+                    ->where('status = ?', 'publish')
+                    ->limit(1)
+            );
+            if (!$parentRow) {
+                break;
+            }
+            $current = $parentRow;
+        }
+
+        return implode('/', $slugs);
     }
 
     private static function containsExplicitProductUiShortcode(string $content): bool

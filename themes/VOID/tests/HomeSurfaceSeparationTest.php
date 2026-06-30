@@ -40,6 +40,8 @@ hsst_assert(strpos($siteCss, '.cm-product-entry') !== false, 'Site CSS styles pr
 hsst_assert(strpos($siteCss, '.cm-read-entry') !== false, 'Site CSS styles article entry affordance');
 hsst_assert(strpos($payCss, '.typechopay-card__price') !== false, 'TypechoPay CSS emphasizes product card price');
 hsst_assert(strpos($payCss, '.typechopay-card__buy') !== false, 'TypechoPay CSS styles product card action');
+hsst_assert(strpos($payCss, '.typechopay-card__detail-link') !== false, 'TypechoPay CSS styles product detail entry');
+hsst_assert(strpos($payCss, '.typechopay-card__title-link') !== false, 'TypechoPay CSS styles linked product titles');
 
 echo "\n\n--- HomeSurfaceSeparationTest ---\n";
 echo "Passed: {$passed}\n";

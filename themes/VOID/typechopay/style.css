@@ -292,6 +292,7 @@
 }
 
 .typechopay-card__cover {
+    display: block;
     aspect-ratio: 16 / 9;
     background: var(--typechopay-void-soft);
 }
@@ -302,6 +303,18 @@
     height: 100%;
     margin: 0;
     object-fit: cover;
+}
+
+.typechopay-card__detail,
+.typechopay-card__title-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.typechopay-card__detail:hover,
+.typechopay-card__title-link:hover {
+    color: var(--typechopay-void-warning);
+    text-decoration: none;
 }
 
 .typechopay-card__body {
@@ -343,8 +356,39 @@
 }
 
 .typechopay-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
     margin-top: auto;
     padding-top: 4px;
+}
+
+.typechopay-card__actions .typechopay-form {
+    flex: 1 1 150px;
+}
+
+.typechopay-card__detail-link {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 9px 16px;
+    border: 1px solid rgba(167, 101, 42, 0.34);
+    border-radius: 8px;
+    color: var(--typechopay-void-warning);
+    background: rgba(167, 101, 42, 0.1);
+    font-size: 0.92rem;
+    font-weight: 750;
+    line-height: 1.35;
+    text-decoration: none;
+}
+
+.typechopay-card__detail-link:hover {
+    border-color: rgba(167, 101, 42, 0.52);
+    color: var(--typechopay-void-warning);
+    background: rgba(167, 101, 42, 0.16);
+    text-decoration: none;
 }
 
 .typechopay-card__buy {
@@ -449,6 +493,7 @@
 
     .typechopay-product-panel__buy,
     .typechopay-card__buy,
+    .typechopay-card__detail-link,
     .typechopay-form,
     .typechopay-form button,
     .typechopay-button--secondary {
