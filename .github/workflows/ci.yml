@@ -40,3 +40,11 @@ jobs:
           for test in themes/VOID/tests/*Test.php; do
             php "$test"
           done
+
+      - name: Build release packages
+        run: |
+          VERSION=ci sh scripts/package-release.sh
+          test -f dist/TypechoPay-ci.zip
+          test -f dist/VOID-cloudmantou-ci.zip
+          unzip -l dist/TypechoPay-ci.zip | grep 'TypechoPay/Plugin.php'
+          unzip -l dist/VOID-cloudmantou-ci.zip | grep 'VOID/functions.php'
