@@ -4,17 +4,18 @@
  */
 
 :root {
-    --typechopay-void-text: #24211f;
-    --typechopay-void-muted: rgba(36, 33, 31, 0.62);
-    --typechopay-void-soft: rgba(36, 33, 31, 0.045);
-    --typechopay-void-line: rgba(36, 33, 31, 0.1);
-    --typechopay-void-panel: rgba(255, 255, 255, 0.9);
-    --typechopay-void-panel-strong: #fff;
-    --typechopay-void-accent: #ad5a58;
-    --typechopay-void-accent-hover: #8e403f;
-    --typechopay-void-success: #2f7e58;
-    --typechopay-void-warning: #9a6a2c;
-    --typechopay-void-danger: #a94442;
+    --typechopay-void-text: #1d1d1f;
+    --typechopay-void-muted: #6e6e73;
+    --typechopay-void-soft: rgba(118, 118, 128, 0.12);
+    --typechopay-void-line: rgba(60, 60, 67, 0.16);
+    --typechopay-void-panel: rgba(255, 255, 255, 0.82);
+    --typechopay-void-panel-strong: rgba(255, 255, 255, 0.96);
+    --typechopay-void-accent: #007aff;
+    --typechopay-void-accent-hover: #0064d2;
+    --typechopay-void-success: #34c759;
+    --typechopay-void-warning: #ff9f0a;
+    --typechopay-void-danger: #ff3b30;
+    --typechopay-void-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
 }
 
 .typechopay-product-panel,
@@ -25,7 +26,7 @@
 .typechopay-owned {
     box-sizing: border-box;
     color: var(--typechopay-void-text);
-    font-family: "Open Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft Yahei", Arial, sans-serif;
     letter-spacing: 0;
 }
 
@@ -44,18 +45,19 @@
     margin: 1.55rem 0 1.8rem;
     overflow: hidden;
     border: 1px solid var(--typechopay-void-line);
-    border-left: 3px solid var(--typechopay-void-accent);
-    border-radius: 8px;
+    border-radius: 20px;
     background: var(--typechopay-void-panel);
-    box-shadow: 0 16px 42px rgba(25, 22, 20, 0.06);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+    backdrop-filter: saturate(180%) blur(18px);
+    box-shadow: var(--typechopay-void-shadow);
 }
 
 .typechopay-product-panel--has-cover {
-    grid-template-columns: minmax(148px, 220px) minmax(0, 1fr);
+    grid-template-columns: minmax(148px, 226px) minmax(0, 1fr);
 }
 
 .typechopay-product-panel__cover {
-    min-height: 188px;
+    min-height: 190px;
     background: var(--typechopay-void-soft);
 }
 
@@ -63,7 +65,7 @@
     display: block;
     width: 100%;
     height: 100%;
-    min-height: 188px;
+    min-height: 190px;
     margin: 0;
     object-fit: cover;
 }
@@ -72,25 +74,26 @@
     display: grid;
     min-width: 0;
     align-content: center;
-    gap: 11px;
-    padding: 23px 25px 22px;
+    gap: 12px;
+    padding: 24px 26px 23px;
 }
 
 .typechopay-product-panel__label,
-.typechopay-card__category {
+.typechopay-card__category,
+.typechopay-post-badge {
     display: inline-flex;
     width: fit-content;
     max-width: 100%;
     align-items: center;
-    min-height: 24px;
-    padding: 2px 8px;
-    border: 1px solid rgba(173, 90, 88, 0.24);
-    border-radius: 6px;
+    min-height: 25px;
+    padding: 3px 9px;
+    border: 1px solid rgba(0, 122, 255, 0.22);
+    border-radius: 999px;
     color: var(--typechopay-void-accent);
-    background: rgba(173, 90, 88, 0.08);
+    background: rgba(0, 122, 255, 0.1);
     font-size: 0.78rem;
-    font-weight: 760;
-    line-height: 1.45;
+    font-weight: 700;
+    line-height: 1.35;
 }
 
 .typechopay-product-panel__title,
@@ -99,12 +102,12 @@
     margin: 0;
     color: var(--typechopay-void-text);
     font-weight: 760;
-    line-height: 1.35;
+    line-height: 1.32;
 }
 
 .typechopay-product-panel__title {
     max-width: 100%;
-    font-size: 1.3rem;
+    font-size: 1.32rem;
 }
 
 .typechopay-product-panel__desc,
@@ -123,20 +126,16 @@
     gap: 9px;
 }
 
-.typechopay-product-panel__meta {
-    padding-top: 2px;
-}
-
 .typechopay-product-panel__price,
 .typechopay-card__price,
 .typechopay-amount {
-    color: var(--typechopay-void-accent);
-    font-weight: 820;
+    color: var(--typechopay-void-text);
+    font-weight: 800;
 }
 
 .typechopay-product-panel__price {
     margin-right: 4px;
-    font-size: 1.42rem;
+    font-size: 1.45rem;
     line-height: 1.18;
 }
 
@@ -150,23 +149,19 @@
 .typechopay-card__stock {
     display: inline-flex;
     align-items: center;
-    min-height: 25px;
-    padding: 3px 8px;
+    min-height: 26px;
+    padding: 3px 9px;
     border: 1px solid var(--typechopay-void-line);
-    border-radius: 6px;
+    border-radius: 999px;
     color: var(--typechopay-void-muted);
     background: var(--typechopay-void-soft);
     font-size: 0.86rem;
-    line-height: 1.4;
+    line-height: 1.35;
 }
 
 .typechopay-product-panel__stock,
 .typechopay-card__stock {
-    color: var(--typechopay-void-success);
-}
-
-.typechopay-product-panel__actions {
-    padding-top: 2px;
+    color: #248a3d;
 }
 
 .typechopay-form {
@@ -181,16 +176,16 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 38px;
-    padding: 8px 17px;
+    min-height: 40px;
+    padding: 9px 18px;
     border: 1px solid var(--typechopay-void-accent);
-    border-radius: 6px;
+    border-radius: 12px;
     color: #fff;
     background: var(--typechopay-void-accent);
     box-shadow: none;
     cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 760;
+    font-size: 0.92rem;
+    font-weight: 700;
     line-height: 1.35;
     text-decoration: none;
     transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
@@ -215,7 +210,7 @@
 
 .typechopay-button--secondary {
     color: var(--typechopay-void-accent);
-    background: transparent;
+    background: rgba(0, 122, 255, 0.08);
 }
 
 .typechopay-button--secondary:hover {
@@ -225,27 +220,16 @@
 .typechopay-button--disabled,
 .typechopay-button--disabled:hover {
     border-color: var(--typechopay-void-line);
-    color: rgba(36, 33, 31, 0.38);
+    color: rgba(60, 60, 67, 0.42);
     background: var(--typechopay-void-soft);
     cursor: not-allowed;
     transform: none;
 }
 
 .typechopay-post-badge {
-    display: inline-flex;
-    width: fit-content;
-    max-width: 100%;
-    align-items: center;
     gap: 6px;
     margin-left: 8px;
-    padding: 2px 8px;
-    border: 1px solid rgba(173, 90, 88, 0.25);
-    border-radius: 6px;
-    color: var(--typechopay-void-accent);
-    background: rgba(173, 90, 88, 0.08);
     font-size: 0.75rem;
-    font-weight: 760;
-    line-height: 1.55;
     vertical-align: middle;
 }
 
@@ -267,7 +251,7 @@
 .typechopay-status--soldout .typechopay-product-panel__stock,
 .typechopay-status--soldout .typechopay-card__stock,
 .typechopay-post-badge.typechopay-status--soldout {
-    color: rgba(36, 33, 31, 0.46);
+    color: rgba(60, 60, 67, 0.5);
     border-color: var(--typechopay-void-line);
     background: var(--typechopay-void-soft);
 }
@@ -294,14 +278,15 @@
     overflow: hidden;
     flex-direction: column;
     border: 1px solid var(--typechopay-void-line);
-    border-radius: 8px;
+    border-radius: 18px;
     background: var(--typechopay-void-panel);
-    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+    backdrop-filter: saturate(180%) blur(18px);
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .typechopay-card:hover {
-    border-color: rgba(173, 90, 88, 0.28);
-    box-shadow: 0 12px 30px rgba(25, 22, 20, 0.07);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
     transform: translateY(-2px);
 }
 
@@ -330,20 +315,12 @@
     font-size: 1.05rem;
 }
 
-.typechopay-card__price {
-    margin-top: 1px;
-}
-
 .typechopay-card__summary {
     display: -webkit-box;
     overflow: hidden;
     min-height: 0;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-}
-
-.typechopay-card__actions {
-    margin-top: 2px;
 }
 
 .typechopay-box,
@@ -353,8 +330,10 @@
     margin: 1.4rem 0;
     padding: 16px 18px;
     border: 1px solid var(--typechopay-void-line);
-    border-radius: 8px;
+    border-radius: 16px;
     background: var(--typechopay-void-panel);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+    backdrop-filter: saturate(180%) blur(18px);
 }
 
 .typechopay-box strong,
@@ -364,74 +343,53 @@
 }
 
 .typechopay-locked {
-    border-color: rgba(154, 106, 44, 0.28);
-    color: var(--typechopay-void-warning);
-    background: rgba(154, 106, 44, 0.08);
+    border-color: rgba(255, 159, 10, 0.28);
+    color: #b26b00;
+    background: rgba(255, 159, 10, 0.1);
 }
 
 .typechopay-error {
-    border-color: rgba(169, 68, 66, 0.28);
+    border-color: rgba(255, 59, 48, 0.28);
     color: var(--typechopay-void-danger);
-    background: rgba(169, 68, 66, 0.08);
+    background: rgba(255, 59, 48, 0.1);
 }
 
 .typechopay-owned {
-    border-color: rgba(47, 126, 88, 0.26);
-    color: var(--typechopay-void-success);
-    background: rgba(47, 126, 88, 0.08);
+    border-color: rgba(52, 199, 89, 0.28);
+    color: #248a3d;
+    background: rgba(52, 199, 89, 0.1);
 }
 
 .theme-dark {
-    --typechopay-void-text: #cececf;
-    --typechopay-void-muted: #aaa;
-    --typechopay-void-soft: rgba(255, 255, 255, 0.045);
-    --typechopay-void-line: rgba(255, 255, 255, 0.09);
-    --typechopay-void-panel: rgba(255, 255, 255, 0.045);
-    --typechopay-void-panel-strong: rgba(255, 255, 255, 0.07);
-    --typechopay-void-accent: #d18484;
-    --typechopay-void-accent-hover: #cececf;
-    --typechopay-void-success: #74ba92;
-    --typechopay-void-warning: #d3a762;
-    --typechopay-void-danger: #d18484;
+    --typechopay-void-text: #f5f5f7;
+    --typechopay-void-muted: #a1a1a6;
+    --typechopay-void-soft: rgba(120, 120, 128, 0.24);
+    --typechopay-void-line: rgba(255, 255, 255, 0.14);
+    --typechopay-void-panel: rgba(28, 28, 30, 0.78);
+    --typechopay-void-panel-strong: rgba(28, 28, 30, 0.94);
+    --typechopay-void-accent: #0a84ff;
+    --typechopay-void-accent-hover: #409cff;
+    --typechopay-void-success: #30d158;
+    --typechopay-void-warning: #ffd60a;
+    --typechopay-void-danger: #ff453a;
+    --typechopay-void-shadow: none;
 }
 
-.theme-dark .typechopay-product-panel,
-.theme-dark .typechopay-card,
-.theme-dark .typechopay-box,
-.theme-dark .typechopay-locked,
-.theme-dark .typechopay-error,
+.theme-dark .typechopay-product-panel__stock,
+.theme-dark .typechopay-card__stock,
 .theme-dark .typechopay-owned {
-    box-shadow: none;
-}
-
-.theme-dark .typechopay-product-panel__cover,
-.theme-dark .typechopay-card__cover {
-    background: rgba(255, 255, 255, 0.035);
-}
-
-.theme-dark .typechopay-product-panel__label,
-.theme-dark .typechopay-card__category,
-.theme-dark .typechopay-post-badge {
-    border-color: rgba(209, 132, 132, 0.34);
-    background: rgba(209, 132, 132, 0.1);
-}
-
-.theme-dark .typechopay-product-panel__buy:hover,
-.theme-dark .typechopay-card__buy:hover,
-.theme-dark .typechopay-form button:hover,
-.theme-dark .typechopay-button--secondary:hover {
-    color: #111;
+    color: var(--typechopay-void-success);
 }
 
 .theme-dark .typechopay-button--disabled,
 .theme-dark .typechopay-button--disabled:hover {
-    color: rgba(255, 255, 255, 0.36);
+    color: rgba(235, 235, 245, 0.42);
 }
 
 .theme-dark .typechopay-status--soldout .typechopay-product-panel__stock,
 .theme-dark .typechopay-status--soldout .typechopay-card__stock,
 .theme-dark .typechopay-post-badge.typechopay-status--soldout {
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(235, 235, 245, 0.5);
 }
 
 @media (max-width: 820px) {
@@ -454,11 +412,12 @@
     .typechopay-product-panel {
         margin-right: -2px;
         margin-left: -2px;
+        border-radius: 18px;
     }
 
     .typechopay-product-panel__main,
     .typechopay-card__body {
-        padding: 15px;
+        padding: 16px;
     }
 
     .typechopay-product-panel__price {
